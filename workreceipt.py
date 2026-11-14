@@ -21,14 +21,14 @@ RULES = [
     ("API key (sk-)", "high", re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"), "[REDACTED:api-key]"),
     ("Google API key", "high", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"), "[REDACTED:google-key]"),
     ("JWT", "high", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"), "[REDACTED:jwt]"),
-    ("URL credentials", "high", re.compile(r"(\b[a-z][a-z0-9+.-]*://)[^\s/:@]+:[^\s/@]+@"), r"\1[REDACTED:creds]@"),
+    ("URL credentials", "high", re.compile(r"(\b[a-z][a-z0-9+.-]{0,30}://)[^\s/:@]+:[^\s/@]+@"), r"\1[REDACTED:creds]@"),
     ("Bearer token", "high", re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._~+/=-]{16,}"), r"\1 [REDACTED:token]"),
     ("npm token", "high", re.compile(r"\bnpm_[A-Za-z0-9]{30,}\b"), "[REDACTED:npm-token]"),
     ("Basic auth", "high", re.compile(r"(?i)\b(basic)\s+[A-Za-z0-9+/=]{16,}"), r"\1 [REDACTED:token]"),
     ("secret assignment", "high", re.compile(
-        r"(?i)([\"']?\b[A-Z0-9_.-]*(?:password|passwd|pwd|secret|token|api[_-]?key|private[_-]?key|credential|auth[_-]?key)[A-Z0-9_.-]*[\"']?)"
+        r"(?i)(?<![A-Z0-9_.-])([\"']?\b[A-Z0-9_.-]*(?:password|passwd|pwd|secret|token|api[_-]?key|private[_-]?key|credential|auth[_-]?key)[A-Z0-9_.-]*[\"']?)"
         r"(\s*[=:]\s*)(?:\"[^\"\n]{4,}\"|'[^'\n]{4,}'|[^\s'\",;}]{6,})"), r"\1\2[REDACTED:secret]"),
-    ("email", "medium", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"), "[REDACTED:email]"),
+    ("email", "medium", re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"), "[REDACTED:email]"),
     ("home path", "low", re.compile(r"(?:/Users|/home)/[^/\s'\"]+"), "~"),
     ("IPv4 address", "low", re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), "[REDACTED:ip]"),
 ]
@@ -255,12 +255,22 @@ def load_sessions(claude_dir, repo, since, until, skipped=None):
         if not (exact or dn.startswith(enc + "-")):
             continue
         pdir = os.path.join(base, dn)
-        for fn in sorted(os.listdir(pdir)) if os.path.isdir(pdir) else []:
+        try:
+            fns = sorted(os.listdir(pdir)) if os.path.isdir(pdir) else []
+        except OSError:
+            fns = []
+        for fn in fns:
             if not fn.endswith(".jsonl"):
                 continue
             prompts, cmds, files, pending, edits, shell_edits = [], [], OrderedDict(), {}, [], []
             first = last = None
-            with open(os.path.join(pdir, fn), encoding="utf-8", errors="replace") as f:
+            try:
+                f = open(os.path.join(pdir, fn), encoding="utf-8", errors="replace")
+            except OSError:
+                if skipped is not None:
+                    skipped["unreadable session file"] += 1
+                continue
+            with f:
                 for line in f:
                     try:
                         ev = json.loads(line)
@@ -277,7 +287,7 @@ def load_sessions(claude_dir, repo, since, until, skipped=None):
                     elif not exact:
                         continue
                     uid = ev.get("uuid")
-                    if uid:
+                    if isinstance(uid, str) and uid:
                         if uid in seen:
                             continue      # resumed/forked sessions repeat earlier events
                         seen.add(uid)
@@ -291,7 +301,7 @@ def load_sessions(claude_dir, repo, since, until, skipped=None):
                     if ev.get("type") == "user":
                         if isinstance(content, list):
                             for b in content:
-                                if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("tool_use_id") in pending:
+                                if isinstance(b, dict) and b.get("type") == "tool_result" and isinstance(b.get("tool_use_id"), str) and b.get("tool_use_id") in pending:
                                     pending[b["tool_use_id"]]["ok"] = result_ok(b)
                         t, why = user_prompt(ev)
                         if t:
@@ -307,7 +317,7 @@ def load_sessions(claude_dir, repo, since, until, skipped=None):
                             if b.get("name") == "Bash" and isinstance(cmd, str) and is_check(cmd):
                                 rec = {"ts": ts, "cmd": cmd, "ok": None}
                                 cmds.append(rec)
-                                if b.get("id"):
+                                if isinstance(b.get("id"), str) and b.get("id"):
                                     pending[b["id"]] = rec
                             elif b.get("name") == "Bash" and isinstance(cmd, str) and MODIFY_RX.search(cmd):
                                 shell_edits.append(ts)      # possible (not observed) change: only used to flag earlier checks

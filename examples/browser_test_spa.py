@@ -43,11 +43,11 @@ with sync_playwright() as p:
     pg.fill("#term","storefront");pg.click("#addterm");pg.wait_for_timeout(900)
     pg.click("#approveall");pg.wait_for_timeout(300)
     ok("review state preserved & nav badge cleared",pg.locator(".tab .dot").count()==0)
-    pg.locator("[data-req='5']").fill("Polished admin spacing (edited)")
+    pg.locator('#studio [data-req]').nth(5).fill("Polished admin spacing (edited)")
     pg.click("#preview");pg.wait_for_selector(".frame");pg.wait_for_timeout(900)
     h=pg.evaluate("document.querySelector('.frame').getBoundingClientRect().height");ok("preview auto-sized (no inner scroller)",h>600,h)
     pg.click("#approveall",no_wait_after=True) if False else None
-    ok("edit survives re-render",pg.locator("[data-req='5']").inner_text().startswith("Polished"))
+    ok("edit survives re-render",pg.locator('#studio [data-req]').nth(5).inner_text().startswith("Polished"))
     pg.locator(".frame").scroll_into_view_if_needed()
     pg.screenshot(path=S+"4b-studio-preview.png")
     pg.click("#export");pg.wait_for_selector("text=Exported.",timeout=60000)

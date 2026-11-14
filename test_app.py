@@ -42,7 +42,8 @@ class Core(AppBase):
         self.assertFalse(r["ok"]); self.assertEqual(r["error"], "review_required")
         self.assertFalse(os.path.isdir(self.out) and os.listdir(self.out))
         ids = [f["id"] for f in core.build({"repo": self.repo})["findings"] if f["severity"] == "high"]
-        r = core.export({"repo": self.repo}, ids, {"5": "Edited title AKIAIOSFODNN7EXAMPLE"})
+        key = core.build({"repo": self.repo})["ctx"]["items"][5]["key"]
+        r = core.export({"repo": self.repo}, ids, {key: "Edited title AKIAIOSFODNN7EXAMPLE"})
         self.assertTrue(r["ok"])
         html = open(r["html_path"]).read()
         self.assertIn("Edited title", html); self.assertNotIn("AKIA", html); self.assertNotIn("jane@", html)

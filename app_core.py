@@ -1,12 +1,12 @@
 """WorkReceipt app core: thin layer over the v0.2.4 engine (workreceipt.py). No engine logic is changed here.
 Everything runs locally; nothing is sent over the network."""
-import hashlib, json, os, shutil, subprocess, tempfile, time
+import hashlib, hmac, json, os, pathlib, secrets, shutil, subprocess, tempfile, time
 from collections import Counter
 from datetime import datetime, timedelta
 
 import workreceipt as w
 
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 HOME_DIR = os.path.join(os.path.expanduser("~"), ".workreceipt")
 DEFAULTS = {"claude_dir": os.environ.get("WORKRECEIPT_CLAUDE_DIR", os.path.expanduser("~/.claude")),
             "out_dir": os.path.join(os.path.expanduser("~"), "WorkReceipt Reports"),
@@ -64,9 +64,10 @@ def _first_cwd(path):
                 if i > 400:
                     break
                 try:
-                    c = json.loads(line).get("cwd")
+                    rec = json.loads(line)
                 except ValueError:
                     continue
+                c = rec.get("cwd") if isinstance(rec, dict) else None
                 if isinstance(c, str) and c:
                     return c
     except OSError:
@@ -86,10 +87,13 @@ def discover(claude_dir):
         d = os.path.join(root, n)
         if not os.path.isdir(d):
             continue
-        files = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".jsonl")]
+        try:
+            files = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".jsonl") and os.path.isfile(os.path.join(d, f))]
+            files.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        except OSError:
+            continue
         if not files:
             continue
-        files.sort(key=lambda p: os.path.getmtime(p), reverse=True)
         cwd = next((c for c in (_first_cwd(p) for p in files[:3]) if c), None)
         if not cwd:
             continue
@@ -123,17 +127,29 @@ def _dates(since, until):
     return s, u
 
 
-def _fid(section, idx, rule):
-    return hashlib.sha1(f"{section}|{idx}|{rule}".encode()).hexdigest()[:10]
+_SALT = secrets.token_bytes(16)      # per-process: ids cannot be guessed, and never match across restarts
+
+
+def _hid(*parts):
+    return hmac.new(_SALT, "|".join(str(p) for p in parts).encode("utf-8", "replace"), hashlib.sha256).hexdigest()[:12]
+
+
+def _fid(section, idx, rule, raw=""):
+    """Finding id covers the content too, so a different value that lands in the same slot never inherits an approval."""
+    return _hid("f", section, idx, rule, raw)
 
 
 def _findings(section, idx, raw, terms, label):
     """Mask `raw` with a fresh redactor; return (masked text, findings). Findings never contain the original value."""
     r = w.Redactor(terms)
     masked = r(raw)
-    fs = [{"id": _fid(section, idx, n), "rule": n, "severity": sev, "count": c, "section": section, "where": label,
+    fs = [{"id": _fid(section, idx, n, raw), "rule": n, "severity": sev, "count": c, "section": section, "where": label,
            "context": w.first_line(masked, 160)} for (n, sev), c in sorted(r.hits.items(), key=lambda x: x[0][1])]
     return masked, fs
+
+
+def _terms(s, opts):
+    return [t.strip() for t in (list(s.get("redact_terms", [])) + list(opts.get("terms") or [])) if isinstance(t, str) and t.strip()]
 
 
 def build(opts, settings=None):
@@ -142,7 +158,7 @@ def build(opts, settings=None):
     if not os.path.isdir(repo):
         raise ValueError("Project folder not found")
     since, until = _dates(opts.get("since") or "", opts.get("until") or "")
-    terms = [t for t in (list(s.get("redact_terms", [])) + list(opts.get("terms") or [])) if t]
+    terms = _terms(s, opts)
     skipped = Counter()
     sessions, _pdir = w.load_sessions(s["claude_dir"], repo, since, until, skipped)
     g = w.git_summary(repo, since, until, opts.get("git_author") or None)
@@ -164,7 +180,7 @@ def build(opts, settings=None):
     items.sort(key=lambda x: x[0])
     work = []
     for i, (ts, text) in enumerate(items):
-        work.append({"i": i, "title": w.first_line(mask("Work request", i, w.first_line(text, 10 ** 9), f"Request {i + 1}")),
+        work.append({"i": i, "key": _hid("r", ts.isoformat(), text), "title": w.first_line(mask("Work request", i, w.first_line(text, 10 ** 9), f"Request {i + 1}")),
                      "date": ts.astimezone(w.LOCAL_TZ).strftime("%b %d")})
     checks = []
     for i, (c, st) in enumerate(w.check_states(sessions)):
@@ -205,20 +221,24 @@ def summary(b):
 
 
 def _apply_titles(ctx, title_edits, terms):
-    for k, text in (title_edits or {}).items():           # human-edited titles are masked again before they reach the report
-        try:
-            i = int(k)
-        except ValueError:
-            continue
-        if 0 <= i < len(ctx["items"]) and isinstance(text, str) and text.strip():
-            ctx["items"][i]["title"] = w.first_line(w.Redactor(terms)(text.strip()))
+    """Edits are keyed to the request itself (not its position), so a log that changed since loading can't shift an edit onto
+    a different request. Edited titles are masked again. Returns how many were applied / dropped (request no longer present)."""
+    by_key = {it["key"]: it for it in ctx["items"]}
+    done = dropped = 0
+    for k, text in (title_edits or {}).items():
+        if k in by_key and isinstance(text, str) and text.strip():
+            by_key[k]["title"] = w.first_line(w.Redactor(terms)(text.strip()))
+            done += 1
+        else:
+            dropped += 1
+    return done, dropped
 
 
 def render_preview(opts, title_edits, settings=None):
     """Masked HTML for on-screen preview only. Nothing is written to disk."""
     s = settings or load_settings()
     b = build(opts, s)
-    _apply_titles(b["ctx"], title_edits, [t for t in (list(s.get("redact_terms", [])) + list(opts.get("terms") or [])) if t])
+    _apply_titles(b["ctx"], title_edits, _terms(s, opts))
     return w.render(b["ctx"])
 
 
@@ -230,23 +250,30 @@ def export(opts, approved, title_edits, settings=None):
     missing = [f["id"] for f in high if f["id"] not in set(approved or [])]
     if missing:
         return {"ok": False, "error": "review_required", "missing": missing}
-    terms = [t for t in (list(s.get("redact_terms", [])) + list(opts.get("terms") or [])) if t]
+    terms = _terms(s, opts)
     ctx = b["ctx"]
-    _apply_titles(ctx, title_edits, terms)
+    applied, dropped = _apply_titles(ctx, title_edits, terms)
     html = w.render(ctx)
-    os.makedirs(s["out_dir"], exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     base = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in ctx["project"])[:40] or "report"
-    path = os.path.join(s["out_dir"], f"{base}-{stamp}.html")
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(html)
+    try:
+        os.makedirs(s["out_dir"], exist_ok=True)
+        path, n = os.path.join(s["out_dir"], f"{base}-{stamp}.html"), 1
+        while os.path.exists(path):                       # never overwrite an earlier export
+            n += 1
+            path = os.path.join(s["out_dir"], f"{base}-{stamp}-{n}.html")
+        with open(path, "x", encoding="utf-8") as f:
+            f.write(html)
+    except OSError as ex:
+        raise ValueError(f"Cannot write to the reports folder ({s['out_dir']}): {ex.strerror or ex}")
     pdf = None
     if opts.get("pdf"):
         pdf = to_pdf(path)
     _add_history({"project": ctx["project"], "repo": os.path.abspath(opts["repo"]), "period": ctx["period"], "html": path, "pdf": pdf,
                   "at": datetime.now().strftime("%Y-%m-%d %H:%M"), "requests": ctx["n_items"], "commits": ctx["n_commits"],
                   "checks": len(ctx["checks"]), "high_reviewed": len(high)})
-    return {"ok": True, "html_path": path, "pdf_path": pdf, "high_reviewed": len(high), "html": html}
+    return {"ok": True, "html_path": path, "pdf_path": pdf, "high_reviewed": len(high), "edits_applied": applied,
+            "edits_dropped": dropped, "html": html}
 
 
 def chrome_path():
@@ -266,7 +293,7 @@ def to_pdf(html_path):
     prof = tempfile.mkdtemp(prefix="wr-chrome-")
     try:
         subprocess.run([chrome, "--headless=new", "--disable-gpu", "--no-sandbox", f"--user-data-dir={prof}", "--no-pdf-header-footer",
-                        f"--print-to-pdf={pdf}", "file://" + html_path], capture_output=True, timeout=60)
+                        f"--print-to-pdf={pdf}", pathlib.Path(html_path).resolve().as_uri()], capture_output=True, timeout=60)
     except (OSError, subprocess.SubprocessError):
         return None
     finally:

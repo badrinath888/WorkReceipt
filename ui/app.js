@@ -119,7 +119,7 @@ function vStudio() {
     <div class="card stat"><div class="k">Files changed</div><div class="v">${P.files}</div><div class="d"><span class="up">+${P.ins}</span> / <span class="down">−${P.dele}</span> lines</div></div>
     <div class="card stat"><div class="k">Checks ${ic("check", 13)}</div><div class="v">${P.n_checks}</div><div class="d">${cs.ok} no error · ${cs.failed} failed</div></div></div>
   <div class="grid g2 sec"><div class="card"><h3>Work requested <span class="chip">editable</span></h3>
-    ${P.requests.length ? `<div class="reqs">${P.requests.map(r => `<div class="req ${S.titles[r.i] != null ? "edited" : ""}"><span class="no">${r.i + 1}</span><div class="tx" contenteditable="plaintext-only" data-req="${r.i}" spellcheck="false">${esc(S.titles[r.i] ?? r.title)}</div><span class="dt">${esc(r.date)}</span></div>`).join("")}</div><p class="note" style="margin-top:8px">Edits are re-checked for secrets before they reach the report.</p>` : `<div class="empty"><b>No requests in this period</b>Try a wider date range.</div>`}</div>
+    ${P.requests.length ? `<div class="reqs">${P.requests.map(r => `<div class="req ${S.titles[r.key] != null ? "edited" : ""}"><span class="no">${r.i + 1}</span><div class="tx" contenteditable="plaintext-only" data-req="${r.key}" spellcheck="false">${esc(S.titles[r.key] ?? r.title)}</div><span class="dt">${esc(r.date)}</span></div>`).join("")}</div><p class="note" style="margin-top:8px">Edits are re-checked for secrets before they reach the report.</p>` : `<div class="empty"><b>No requests in this period</b>Try a wider date range.</div>`}</div>
     <div class="grid" style="align-content:start"><div class="card"><h3>Git evidence</h3>${P.is_git ? (P.commits.length ? `<div class="list">${P.commits.slice(0, 8).map(c => `<div class="row"><span class="mono" style="color:var(--faint)">${esc(c[0].slice(0, 7))}</span><div class="grow"><div class="t" title="${esc(c[2])}">${esc(c[2])}</div><div class="s">${esc(c[1])}</div></div></div>`).join("")}</div>${P.n_commits > 8 ? `<p class="note" style="margin-top:6px">…and ${P.n_commits - 8} more.</p>` : ""}` : `<div class="empty" style="padding:14px"><b>No commits in this period</b></div>`) : `<div class="empty" style="padding:14px"><b>Not a Git repository</b>No delivered changes can be shown.</div>`}
       ${P.dirs.length ? `<p class="note" style="margin-top:8px"><b>Where changes landed:</b> ${P.dirs.slice(0, 4).map(d => `<span class="mono">${esc(d[0])}</span> (${d[1]})`).join(", ")}</p>` : ""}</div>
     <div class="card"><h3>Verification</h3>${P.n_checks ? `<div class="pill-row"><span class="badge ok">${cs.ok} no error reported</span><span class="badge bad">${cs.failed} failed</span><span class="badge">${cs.unknown} no result</span></div>
@@ -197,7 +197,7 @@ async function doExport() {
   try {
     const r = await api("/api/export", { ...opts(), titles: S.titles, approved: [...S.approved], pdf: S.data.chrome });
     if (r._status === 409) { toast("Export blocked: high-severity findings need review"); go("privacy"); }
-    else { S.lastExport = r; await loadState(); toast("Report exported"); }
+    else { S.lastExport = r; await loadState(); toast(r.edits_dropped ? `Report exported (${r.edits_dropped} edit(s) skipped: that request is no longer in the logs)` : "Report exported"); }
   } catch (e) { toast(e.message); }
   S.exporting = false; render();
 }
@@ -241,7 +241,7 @@ document.addEventListener("input", e => {
   if (e.target.id === "repo") S.repoDraft = e.target.value;
   if (["since", "until", "gitauthor", "client"].includes(e.target.id)) syncForm();
   const r = e.target.dataset?.req;
-  if (r != null) { const orig = S.prev.requests[+r].title, v = e.target.textContent.trim(); if (v && v !== orig) S.titles[r] = v; else delete S.titles[r]; S.html = null; e.target.closest(".req").classList.toggle("edited", r in S.titles); }
+  if (r != null) { const orig = S.prev.requests.find(q => q.key === r)?.title, v = e.target.textContent.trim(); if (v && v !== orig) S.titles[r] = v; else delete S.titles[r]; S.html = null; e.target.closest(".req").classList.toggle("edited", r in S.titles); }
 });
 document.addEventListener("keydown", e => { if (e.target.id === "term" && e.key === "Enter") $("#addterm").click(); if (e.target.id === "repo" && e.key === "Enter") $("#usepath").click(); });
 function syncForm() { for (const [id, k] of [["since", "since"], ["until", "until"], ["gitauthor", "gitAuthor"], ["client", "client"], ["repo", "repo"]]) { const el = $("#" + id); if (el && id !== "repo") S[k] = el.value.trim(); } }
