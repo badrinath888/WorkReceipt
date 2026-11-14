@@ -176,7 +176,10 @@ function vPrivacy() {
     <div class="card stat"><div class="k"><span><span class="sev low"></span> Low</span></div><div class="v">${sv("low")}</div><div class="d">paths, IP addresses</div></div>
     <div class="card stat"><div class="k">Export approval</div><div class="v">${H.length ? `${done}/${H.length}` : "Clear"}</div><div class="prog"><i style="width:${H.length ? done / H.length * 100 : 100}%"></i></div><div class="d">${H.length ? (done === H.length ? "all high-severity reviewed" : "reviewed") : "no high-severity findings"}</div></div></div>
   ${H.length && done < H.length ? `<div class="callout sec"><div><b>Check each high-severity item in your own files before approving.</b> If a masked value was a real credential, rotate it. Reviewing records your decision; it does not make anything safe and never unmasks the report. Automatic redaction is best-effort and not a guarantee of confidentiality.</div></div>` : ""}
-  <div class="card sec"><h3>Masked values <span class="chip">${F.length}</span></h3>${F.length ? F.map(f => `<details class="grp" data-g="${f.id}" ${S.open.has(f.id) ? "open" : ""}><summary><span class="badge ${f.severity}"><span class="sev ${f.severity}"></span>${f.severity}</span> <b>${esc(f.rule)}</b>${f.count > 1 ? ` ×${f.count}` : ""} <span class="note">${esc(f.where)}</span>${f.severity === "high" ? ` <span class="note">· ${f.detections.filter(d => S.disp[d.id]).length}/${f.detections.length} reviewed</span>` : ""}</summary><div class="mono gctx">${esc(f.context)}</div>${f.severity === "high" ? f.detections.map(detRow).join("") : '<p class="note">Masked automatically; no review needed.</p>'}</details>`).join("") : `<div class="empty"><b>No sensitive values found</b>Nothing in this period matched a redaction rule. Read the report before sharing anyway.</div>`}</div>
+  <div class="card sec"><h3>Masked values <span class="chip">${F.length}</span></h3>${F.length ? F.map(f => { const hi = f.severity === "high", op = hi && S.open.has(f.id), nrev = f.detections.filter(d => S.disp[d.id]).length;
+    const head = `<span class="badge ${f.severity}"><span class="sev ${f.severity}"></span>${f.severity}</span> <b>${esc(f.rule)}</b>${f.count > 1 ? ` ×${f.count}` : ""} <span class="note">${esc(f.where)}</span>${hi ? ` <span class="note">· ${nrev}/${f.detections.length} reviewed</span>` : ""}`;
+    return `<div class="grp${op ? " open" : ""}" data-gid="${f.id}">${hi ? `<button type="button" class="gh" data-toggle="${f.id}" aria-expanded="${op}" aria-controls="gp-${f.id}"><span class="chev" aria-hidden="true">${ic("arrow", 12)}</span>${head}<span class="gcta">${op ? "Hide" : "Show"} ${f.detections.length} detection${f.detections.length === 1 ? "" : "s"}</span></button>` : `<div class="gh plain">${head}</div>`}
+      <div class="mono gctx">${esc(f.context)}</div>${hi ? `<div class="gp" id="gp-${f.id}" role="region" aria-label="${esc(f.rule)} detections" ${op ? "" : "hidden"}>${op ? f.detections.map(detRow).join("") : ""}</div>` : '<p class="note">Masked automatically; no review needed.</p>'}</div>`; }).join("") : `<div class="empty"><b>No sensitive values found</b>Nothing in this period matched a redaction rule. Read the report before sharing anyway.</div>`}</div>
   <div class="sec">${termsCard}</div>
   <div class="card sec"><h3>Export approval</h3><p class="note">${pendingHigh().length ? `${pendingHigh().length} high-severity item(s) still need review. Export is blocked, in the app and on the server, until each one is reviewed.` : "All high-severity items are reviewed. You can export from Report Studio."}</p><div style="margin-top:10px"><button class="btn teal" data-go="studio">Go to Report Studio ${ic("arrow")}</button></div></div></div>`;
 }
@@ -242,8 +245,9 @@ function pick(path) { S.repo = path; S.repoDraft = null; S.prev = null; S.html =
 async function rescan() { if (S.repo) { await load(); } else render(); }
 
 document.addEventListener("click", async e => {
-  const t = e.target.closest("[data-go],[data-pick],[data-range],[data-rmterm],[data-theme],[data-reveal],[data-review],[data-close],button[id]");
+  const t = e.target.closest("[data-go],[data-pick],[data-range],[data-rmterm],button[data-theme],[data-toggle],[data-reveal],[data-review],[data-close],button[id]");
   if (!t) return;
+  if (t.dataset.toggle) { const id = t.dataset.toggle; S.open.has(id) ? S.open.delete(id) : S.open.add(id); return render(); }
   if (t.dataset.close) return closeDlg();
   if (t.dataset.reveal) return doReveal(t.dataset.reveal);
   if (t.dataset.review) { S.dlg = { kind: "review", id: t.dataset.review, pick: S.disp[t.dataset.review] || "", ack: false }; return showDlg(); }
@@ -279,7 +283,6 @@ document.addEventListener("input", e => {
   const r = e.target.dataset?.req;
   if (r != null) { const orig = S.prev.requests.find(q => q.key === r)?.title, v = e.target.textContent.trim(); if (v && v !== orig) S.titles[r] = v; else delete S.titles[r]; S.html = null; e.target.closest(".req").classList.toggle("edited", r in S.titles); }
 });
-document.addEventListener("toggle", e => { const g = e.target.dataset?.g; if (g) e.target.open ? S.open.add(g) : S.open.delete(g); }, true);
 document.addEventListener("keydown", e => { if (e.key === "Escape" && S.dlg) closeDlg(); if (e.target.id === "term" && e.key === "Enter") $("#addterm").click(); if (e.target.id === "repo" && e.key === "Enter") $("#usepath").click(); });
 function syncForm() { for (const [id, k] of [["since", "since"], ["until", "until"], ["gitauthor", "gitAuthor"], ["client", "client"], ["repo", "repo"]]) { const el = $("#" + id); if (el && id !== "repo") S[k] = el.value.trim(); } }
 document.addEventListener("focusout", e => { if (["since", "until", "gitauthor", "client"].includes(e.target.id)) syncForm(); });

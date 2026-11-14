@@ -41,7 +41,7 @@ with sync_playwright() as p:
     ok("raw key not in page","AKIAIOSFODNN7EXAMPLE" not in pg.content())
     pg.click("#addterm",no_wait_after=True) if False else None
     pg.fill("#term","storefront");pg.click("#addterm");pg.wait_for_timeout(900)
-    pg.evaluate("document.querySelectorAll('#privacy details.grp').forEach(d=>d.open=true)");pg.wait_for_timeout(200)
+    while pg.locator("#privacy button.gh[aria-expanded=false]").count(): pg.locator("#privacy button.gh[aria-expanded=false]").first.click();pg.wait_for_timeout(100)
     ok("no bulk approve control",pg.locator("#approveall").count()==0)
     nrev=pg.locator("#privacy [data-review]").count();ok("every high detection is listed individually",nrev>=1,nrev)
     # reveal: explicit, local, transient; nothing persisted in the browser
