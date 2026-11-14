@@ -45,3 +45,13 @@ Prints PASS / NEEDS REVIEW / FAIL and saves `validation_summary.txt` (counts, fi
 
 ## Known limitations
 Titles are the first line of each prompt (can be long/low-level; edit in the browser). Client/project names are not auto-detected (use `--redact-term`). Unquoted prose like `token: refresh` can trigger the secret rule (fails closed). Base64 secrets containing `/` can evade the entropy rule. Check detection covers common runners (pytest, npm/yarn/pnpm, cargo, go, mvn, gradle, swift, xcodebuild, dotnet, make, ruff, eslint, tsc...) not custom scripts. `git log` follows the current branch only. Windows is untested.
+
+## Reviewing high-severity findings (v0.3.3)
+
+The Privacy Center lists every individual detection inside a grouped finding, with its source (check, request or commit), line and column,
+length, and redacted surrounding lines. Values stay masked. **Reveal value** fetches that one value from your local logs through the local
+server (token required, explicit confirmation, `no-store`); it is shown only in an on-screen dialog that hides itself after 20 seconds, and is
+never logged, cached, stored in the browser or written to a report. **Review** records your decision (real / dummy / unsure) with an
+acknowledgement; every choice keeps the value masked in the report, and nothing is approved automatically from a variable name or placeholder text.
+Export is blocked, on the server too, until every high-severity detection has a decision. Limits: decisions last for the session only; texts over
+400 KB are reviewed as a single unit without reveal; a value that no longer exists in your logs cannot be revealed.

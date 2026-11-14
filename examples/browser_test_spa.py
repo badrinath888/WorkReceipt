@@ -41,12 +41,27 @@ with sync_playwright() as p:
     ok("raw key not in page","AKIAIOSFODNN7EXAMPLE" not in pg.content())
     pg.click("#addterm",no_wait_after=True) if False else None
     pg.fill("#term","storefront");pg.click("#addterm");pg.wait_for_timeout(900)
-    pg.click("#approveall");pg.wait_for_timeout(300)
-    ok("review state preserved & nav badge cleared",pg.locator(".tab .dot").count()==0)
+    pg.evaluate("document.querySelectorAll('#privacy details.grp').forEach(d=>d.open=true)");pg.wait_for_timeout(200)
+    ok("no bulk approve control",pg.locator("#approveall").count()==0)
+    nrev=pg.locator("#privacy [data-review]").count();ok("every high detection is listed individually",nrev>=1,nrev)
+    # reveal: explicit, local, transient; nothing persisted in the browser
+    pg.locator("#privacy [data-reveal]").first.click();pg.wait_for_selector("#rv",timeout=5000)
+    shown=pg.inner_text("#rv");ok("reveal shows exactly one value on demand",len(shown)>=4 and pg.locator("#rv").count()==1,shown[:3])
+    pg.click("#dlgroot [data-close]");pg.wait_for_timeout(200)
+    ok("value gone from page after hide",shown not in pg.content() and pg.locator("#rv").count()==0)
+    st=pg.evaluate("[localStorage.length,sessionStorage.length,document.cookie.length]");ok("no browser storage used",st==[0,0,0],st)
+    ok("pending badge present before review",pg.locator(".tab .dot").count()>=0 and pg.locator("#privacy .badge.high:text('pending')").count()>=1)
+    for _ in range(nrev):
+        pg.locator("#privacy [data-review]").filter(has=pg.locator("xpath=self::*")).nth(0).click() if False else None
+        btn=pg.locator("#privacy .det:has(.badge.high) [data-review]").first
+        if btn.count()==0: break
+        btn.click();pg.wait_for_selector("#confirmrev")
+        ok_dis=pg.locator("#confirmrev").is_disabled();pg.check("input[name=disp][value=unsure]");pg.check("#ack");pg.click("#confirmrev");pg.wait_for_timeout(150)
+    ok("review needs a choice and an acknowledgement (button was disabled first)",ok_dis)
+    ok("review state preserved & nav badge cleared",pg.locator(".tab .dot").count()==0 and pg.locator("#privacy .badge.high:text('pending')").count()==0)
     pg.locator('#studio [data-req]').nth(5).fill("Polished admin spacing (edited)")
     pg.click("#preview");pg.wait_for_selector(".frame");pg.wait_for_timeout(900)
     h=pg.evaluate("document.querySelector('.frame').getBoundingClientRect().height");ok("preview auto-sized (no inner scroller)",h>600,h)
-    pg.click("#approveall",no_wait_after=True) if False else None
     ok("edit survives re-render",pg.locator('#studio [data-req]').nth(5).inner_text().startswith("Polished"))
     pg.locator(".frame").scroll_into_view_if_needed()
     pg.screenshot(path=S+"4b-studio-preview.png")

@@ -10,6 +10,11 @@ GH = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"   # synthetic, matches the 
 TS = "2026-11-10T10:00:00Z"
 
 
+def disp(findings, v="unsure"):
+    """A complete review: one disposition per high-severity detection."""
+    return {d["id"]: v for f in findings if f["severity"] == "high" for d in f["detections"]}
+
+
 def sh(*a, cwd=None, **k):
     return subprocess.run(a, check=True, capture_output=True, text=True, cwd=cwd, env=ENV, **k)
 
@@ -207,7 +212,7 @@ class Privacy(unittest.TestCase):
         blob = json.dumps(s)
         for leak in (AKIA, GH, "hunter2hunter2", "jane@example.com"):
             self.assertNotIn(leak, blob)
-        ids = [f["id"] for f in s["findings"] if f["severity"] == "high"]
+        ids = disp(s["findings"])
         self.assertGreaterEqual(len(ids), 4)
         r = core.export({"repo": ws.repo, "client": f"Client {AKIA}", "author": f"me {GH}"}, ids, {})
         self.assertTrue(r["ok"])
@@ -219,9 +224,9 @@ class Privacy(unittest.TestCase):
     def test_export_requires_every_high_finding(self):
         ws = WS(); self.addCleanup(ws.done)
         ws.log([ws.user(f"key {AKIA}", ts="2026-11-10T09:00:00Z"), ws.user(f"token {GH}", ts="2026-11-10T10:00:00Z")])
-        F = ws.build()["findings"]; hi = [f["id"] for f in F if f["severity"] == "high"]
+        F = ws.build()["findings"]; hi = disp(F); k = list(hi)
         self.assertEqual(len(hi), 2)
-        for partial in ([], hi[:1], ["bogus", hi[1]], [f["id"] for f in F if f["severity"] != "high"]):
+        for partial in ({}, {k[0]: "unsure"}, {"bogus": "unsure", k[1]: "unsure"}, {k[0]: "yes", k[1]: "unsure"}, {k[0]: "", k[1]: "unsure"}, [k[0], k[1]], {f["id"]: "unsure" for f in F}):
             r = core.export({"repo": ws.repo}, partial, {})
             self.assertFalse(r["ok"], partial)
         self.assertFalse(os.path.isdir(core.load_settings()["out_dir"]) and os.listdir(core.load_settings()["out_dir"]))
@@ -229,8 +234,8 @@ class Privacy(unittest.TestCase):
 
     def test_approval_is_bound_to_the_value_not_the_slot(self):
         ws = WS(); self.addCleanup(ws.done)
-        ws.log([ws.user(f"key {AKIA}")]); old = [f["id"] for f in ws.build()["findings"] if f["severity"] == "high"]
-        self.assertEqual(old, [f["id"] for f in ws.build()["findings"] if f["severity"] == "high"])      # stable within a run
+        ws.log([ws.user(f"key {AKIA}")]); old = disp(ws.build()["findings"])
+        self.assertEqual(old, disp(ws.build()["findings"]))      # stable within a run
         ws.log([ws.user("key AKIAABCDEFGHIJKLMNOP")])                                                     # a different secret, same slot
         self.assertFalse(core.export({"repo": ws.repo}, old, {})["ok"])
 

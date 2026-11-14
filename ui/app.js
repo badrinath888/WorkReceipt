@@ -15,7 +15,7 @@ const TABS = [["overview", "Overview"], ["projects", "Projects"], ["studio", "Re
 const ICON = { overview: "grid", projects: "folder", studio: "doc", privacy: "shield", settings: "gear" };
 
 const S = { tab: "", data: null, repo: "", since: "", until: "", client: "", author: "", gitAuthor: "", terms: [], prev: null,
-  titles: {}, approved: new Set(), loading: false, err: "", html: null, exporting: false, lastExport: null, repoDraft: null };
+  titles: {}, disp: {}, open: new Set(), dlg: null, loading: false, err: "", html: null, exporting: false, lastExport: null, repoDraft: null };
 
 async function api(path, body) {
   const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "X-WR-Token": TOKEN, "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -26,7 +26,40 @@ async function api(path, body) {
 function toast(m) { const t = $("#toast"); t.textContent = m; t.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("on"), 3200); }
 const opts = () => ({ repo: S.repo, since: S.since, until: S.until, client: S.client, author: S.author, git_author: S.gitAuthor, terms: S.terms });
 const highF = () => (S.prev ? S.prev.findings.filter(f => f.severity === "high") : []);
-const pendingHigh = () => highF().filter(f => !S.approved.has(f.id));
+const highD = () => highF().flatMap(f => f.detections);
+const pendingHigh = () => highD().filter(d => !S.disp[d.id]);
+const DISP = { credential: "Real credential (rotate it)", not_credential: "Not a credential (test or dummy value)", unsure: "Unsure (treat as sensitive)" };
+const DISP_SHORT = { credential: "real", not_credential: "dummy", unsure: "unsure" };
+function detRow(d) {
+  const ctx = (d.context || []).map(l => `<div class="cl${l.hit ? " hit" : ""}">${l.segs.map(([k, t]) => k === "hl" ? `<mark>${esc(t)}</mark>` : esc(t)).join("")}</div>`).join("");
+  const loc = d.line ? `${esc(d.where)}${d.at ? " · " + esc(d.at) : ""} · line ${d.line} of ${d.lines}, col ${d.col} · ${d.length} chars` : `${esc(d.where)} · ${d.unitemised} detection(s), not individually locatable (text too large)`;
+  const rep = d.in_report === false ? "Masked, and not printed in the exported report (only the first line of each command is shown)." : d.in_report ? "Appears (masked) in the exported report." : "";
+  const notes = [d.same_value_elsewhere ? `Same value appears in ${d.same_value_elsewhere} other place(s).` : "", d.inside ? `Inside a ${esc(d.inside)} match.` : "", d.also?.length ? `Also contains: ${d.also.map(esc).join(", ")}.` : "", rep].filter(Boolean).join(" ");
+  const r = S.disp[d.id];
+  return `<div class="det"><div class="dh"><b>#${d.n} of ${d.of}</b><span class="note">${loc}</span></div>${ctx ? `<div class="ctx mono">${ctx}</div>` : ""}${notes ? `<p class="note">${notes}</p>` : ""}
+    <div class="dact">${d.line ? `<button class="btn" data-reveal="${d.id}">Reveal value</button>` : ""}<button class="btn ${r ? "" : "dark"}" data-review="${d.id}">${r ? "Change review" : "Review"}</button>${r ? `<span class="badge teal">${DISP_SHORT[r]}</span>` : '<span class="badge high">pending</span>'}</div></div>`;
+}
+function dialogHTML() {
+  const g = S.dlg; if (!g) return "";
+  const d = highD().find(x => x.id === g.id); if (!d) return "";
+  if (g.kind === "reveal") return `<div class="ovl" role="dialog" aria-modal="true" aria-label="Reveal value"><div class="dlgbox"><h3>Original value</h3><p class="note">${esc(d.where)}, line ${d.line}. Shown only on this screen, only for this detection. It is not logged, stored or sent anywhere, and hides itself in 20 seconds.</p>
+    ${g.value == null ? (g.err ? `<p class="note">${esc(g.err)}</p>` : '<p class="note">Loading…</p>') : '<pre class="revealed" id="rv"></pre>'}<div class="dact"><button class="btn dark" data-close="1">Hide and close</button></div></div></div>`;
+  return `<div class="ovl" role="dialog" aria-modal="true" aria-label="Review detection"><div class="dlgbox"><h3>Review detection #${d.n} of ${d.of}</h3><p class="note">${esc(d.rule)} · ${esc(d.where)}${d.line ? ", line " + d.line : ""}. Your choice is recorded for this session only and does not unmask anything: the value stays masked in the report either way.</p>
+    ${Object.entries(DISP).map(([k, v]) => `<label class="opt"><input type="radio" name="disp" value="${k}" ${g.pick === k ? "checked" : ""}> ${v}</label>`).join("")}
+    <label class="opt"><input type="checkbox" id="ack" ${g.ack ? "checked" : ""}> I have inspected this detection myself (or understand I cannot) and I take responsibility for this choice.</label>
+    <div class="dact"><button class="btn dark" id="confirmrev" ${g.pick && g.ack ? "" : "disabled"}>Confirm review</button><button class="btn" data-close="1">Cancel</button></div></div></div>`;
+}
+function closeDlg() { clearTimeout(closeDlg.t); S.dlg = null; const o = $("#dlgroot"); if (o) o.innerHTML = ""; }
+function showDlg() {
+  const o = $("#dlgroot"); if (!o) return; o.innerHTML = dialogHTML();
+  const rv = $("#rv"); if (rv && S.dlg?.value != null) rv.textContent = S.dlg.value;
+  o.querySelector("button,input")?.focus();
+}
+async function doReveal(id) {
+  S.dlg = { kind: "reveal", id, value: null, err: "" }; showDlg();
+  try { const r = await api("/api/reveal", { ...opts(), id, confirm: true }); if (S.dlg?.id !== id) return; S.dlg.value = r.value; showDlg(); clearTimeout(closeDlg.t); closeDlg.t = setTimeout(closeDlg, 20000); }
+  catch (e) { if (S.dlg) { S.dlg.err = e.message; showDlg(); } }
+}
 const today = () => new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 const iso = d => { const z = new Date(d.getTime() - d.getTimezoneOffset() * 6e4); return z.toISOString().slice(0, 10); };
 const proj = () => (S.data?.projects || []).find(p => p.path === S.repo);
@@ -135,16 +168,15 @@ function vPrivacy() {
     <div class="tags">${S.terms.map((t, i) => `<span class="tag">${esc(t)}<button data-rmterm="${i}" aria-label="Remove ${esc(t)}">×</button></span>`).join("")}${(S.data.settings.redact_terms || []).map(t => `<span class="tag" title="Saved in Settings">${esc(t)} <span class="badge teal">saved</span></span>`).join("")}</div>
     <p class="note" style="margin-top:8px">Terms are matched case-insensitively and always count as high severity. ${S.repo ? "Adding a term re-scans the loaded project." : ""}</p></div>`;
   if (!P) return `<div><div class="ph"><div><h2>Privacy Center</h2><p>Review everything that was masked before you export.</p></div></div><div class="card"><div class="empty"><b>Nothing to review yet</b>Load a project's activity and every masked value will be listed here.<br><button class="btn dark" data-go="projects">Choose a project</button></div></div><div class="sec">${termsCard}</div></div>`;
-  const F = P.findings, H = highF(), done = H.length - pendingHigh().length, sv = k => F.filter(f => f.severity === k).length;
-  return `<div><div class="ph"><div><h2>Privacy Center <span class="chip">${esc(P.project)}</span></h2><p>Masked values are shown by rule and location only; original values are never displayed or transmitted.</p></div>
-    <div class="act"><button class="btn dark" id="approveall" ${pendingHigh().length ? "" : "disabled"}>Mark all high-severity reviewed</button></div></div>
+  const F = P.findings, H = highD(), done = H.length - pendingHigh().length, sv = k => F.filter(f => f.severity === k).reduce((a, f) => a + f.count, 0);
+  return `<div><div class="ph"><div><h2>Privacy Center <span class="chip">${esc(P.project)}</span></h2><p>Values stay masked unless you choose to reveal one. Each high-severity detection needs your own review before export.</p></div></div>
   <div class="grid g4">
-    <div class="card stat"><div class="k"><span><span class="sev high"></span> High</span></div><div class="v">${sv("high")}</div><div class="d">review required before export</div></div>
+    <div class="card stat"><div class="k"><span><span class="sev high"></span> High</span></div><div class="v">${sv("high")}</div><div class="d">detections to review before export</div></div>
     <div class="card stat"><div class="k"><span><span class="sev medium"></span> Medium</span></div><div class="v">${sv("medium")}</div><div class="d">e.g. email addresses</div></div>
     <div class="card stat"><div class="k"><span><span class="sev low"></span> Low</span></div><div class="v">${sv("low")}</div><div class="d">paths, IP addresses</div></div>
     <div class="card stat"><div class="k">Export approval</div><div class="v">${H.length ? `${done}/${H.length}` : "Clear"}</div><div class="prog"><i style="width:${H.length ? done / H.length * 100 : 100}%"></i></div><div class="d">${H.length ? (done === H.length ? "all high-severity reviewed" : "reviewed") : "no high-severity findings"}</div></div></div>
-  ${H.length && done < H.length ? `<div class="callout sec"><div><b>Check each high-severity item in your own files before approving.</b> If a masked value was a real credential, rotate it. Ticking “reviewed” confirms you looked at it; it does not make it safe. Automatic redaction is best-effort and not a guarantee of confidentiality.</div></div>` : ""}
-  <div class="card sec"><h3>Masked values <span class="chip">${F.length}</span></h3>${F.length ? `<table class="tbl"><thead><tr><th>Severity</th><th>Rule</th><th>Where</th><th class="hide-m">Masked context</th><th style="text-align:right">Reviewed</th></tr></thead><tbody>${F.map(f => `<tr><td><span class="badge ${f.severity}"><span class="sev ${f.severity}"></span>${f.severity}</span></td><td>${esc(f.rule)}${f.count > 1 ? ` ×${f.count}` : ""}</td><td>${esc(f.where)}</td><td class="hide-m mono" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.context)}">${esc(f.context)}</td><td style="text-align:right">${f.severity === "high" ? `<input type="checkbox" class="chk" data-appr="${f.id}" ${S.approved.has(f.id) ? "checked" : ""} aria-label="Reviewed">` : '<span class="note">—</span>'}</td></tr>`).join("")}</tbody></table>` : `<div class="empty"><b>No sensitive values found</b>Nothing in this period matched a redaction rule. Read the report before sharing anyway.</div>`}</div>
+  ${H.length && done < H.length ? `<div class="callout sec"><div><b>Check each high-severity item in your own files before approving.</b> If a masked value was a real credential, rotate it. Reviewing records your decision; it does not make anything safe and never unmasks the report. Automatic redaction is best-effort and not a guarantee of confidentiality.</div></div>` : ""}
+  <div class="card sec"><h3>Masked values <span class="chip">${F.length}</span></h3>${F.length ? F.map(f => `<details class="grp" data-g="${f.id}" ${S.open.has(f.id) ? "open" : ""}><summary><span class="badge ${f.severity}"><span class="sev ${f.severity}"></span>${f.severity}</span> <b>${esc(f.rule)}</b>${f.count > 1 ? ` ×${f.count}` : ""} <span class="note">${esc(f.where)}</span>${f.severity === "high" ? ` <span class="note">· ${f.detections.filter(d => S.disp[d.id]).length}/${f.detections.length} reviewed</span>` : ""}</summary><div class="mono gctx">${esc(f.context)}</div>${f.severity === "high" ? f.detections.map(detRow).join("") : '<p class="note">Masked automatically; no review needed.</p>'}</details>`).join("") : `<div class="empty"><b>No sensitive values found</b>Nothing in this period matched a redaction rule. Read the report before sharing anyway.</div>`}</div>
   <div class="sec">${termsCard}</div>
   <div class="card sec"><h3>Export approval</h3><p class="note">${pendingHigh().length ? `${pendingHigh().length} high-severity item(s) still need review. Export is blocked, in the app and on the server, until each one is reviewed.` : "All high-severity items are reviewed. You can export from Report Studio."}</p><div style="margin-top:10px"><button class="btn teal" data-go="studio">Go to Report Studio ${ic("arrow")}</button></div></div></div>`;
 }
@@ -181,7 +213,7 @@ async function loadState() { S.data = await api("/api/state"); applyTheme(); }
 async function load() {
   S.loading = true; S.err = ""; S.html = null; S.lastExport = null; render();
   try {
-    S.prev = await api("/api/preview", opts()); S.approved = new Set([...S.approved].filter(id => S.prev.findings.some(f => f.id === id)));
+    S.prev = await api("/api/preview", opts()); { const ids = new Set(highD().map(d => d.id)); for (const k of Object.keys(S.disp)) if (!ids.has(k)) delete S.disp[k]; }
     S.titles = {};
   } catch (e) { S.err = e.message; S.prev = null; }
   S.loading = false; render();
@@ -195,7 +227,7 @@ async function doExport() {
   if (pendingHigh().length) { toast("Review high-severity findings first"); go("privacy"); return; }
   S.exporting = true; render();
   try {
-    const r = await api("/api/export", { ...opts(), titles: S.titles, approved: [...S.approved], pdf: S.data.chrome });
+    const r = await api("/api/export", { ...opts(), titles: S.titles, approved: S.disp, pdf: S.data.chrome });
     if (r._status === 409) { toast("Export blocked: high-severity findings need review"); go("privacy"); }
     else { S.lastExport = r; await loadState(); toast(r.edits_dropped ? `Report exported (${r.edits_dropped} edit(s) skipped: that request is no longer in the logs)` : "Report exported"); }
   } catch (e) { toast(e.message); }
@@ -210,8 +242,11 @@ function pick(path) { S.repo = path; S.repoDraft = null; S.prev = null; S.html =
 async function rescan() { if (S.repo) { await load(); } else render(); }
 
 document.addEventListener("click", async e => {
-  const t = e.target.closest("[data-go],[data-pick],[data-range],[data-rmterm],[data-theme],button[id]");
+  const t = e.target.closest("[data-go],[data-pick],[data-range],[data-rmterm],[data-theme],[data-reveal],[data-review],[data-close],button[id]");
   if (!t) return;
+  if (t.dataset.close) return closeDlg();
+  if (t.dataset.reveal) return doReveal(t.dataset.reveal);
+  if (t.dataset.review) { S.dlg = { kind: "review", id: t.dataset.review, pick: S.disp[t.dataset.review] || "", ack: false }; return showDlg(); }
   if (t.dataset.go) { e.preventDefault(); return go(t.dataset.go); }
   if (t.dataset.pick) return pick(t.dataset.pick);
   if (t.dataset.range) { setRange(t.dataset.range); return render(); }
@@ -223,7 +258,7 @@ document.addEventListener("click", async e => {
     case "load": syncForm(); await load(); break;
     case "preview": case "preview2": await makePreview(); break;
     case "export": await doExport(); break;
-    case "approveall": highF().forEach(f => S.approved.add(f.id)); render(); toast("High-severity findings marked reviewed"); break;
+    case "confirmrev": { const g = S.dlg; if (g?.pick && g.ack) { S.disp[g.id] = g.pick; closeDlg(); render(); toast("Review recorded"); } break; }
     case "addterm": { const v = $("#term").value.trim(); if (v) { S.terms.push(v); await rescan(); } break; }
     case "savesettings": {
       try {
@@ -235,7 +270,8 @@ document.addEventListener("click", async e => {
   }
 });
 document.addEventListener("change", e => {
-  if (e.target.dataset.appr) { e.target.checked ? S.approved.add(e.target.dataset.appr) : S.approved.delete(e.target.dataset.appr); render(); }
+  if (e.target.name === "disp" && S.dlg) { S.dlg.pick = e.target.value; showDlg(); }
+  if (e.target.id === "ack" && S.dlg) { S.dlg.ack = e.target.checked; showDlg(); }
 });
 document.addEventListener("input", e => {
   if (e.target.id === "repo") S.repoDraft = e.target.value;
@@ -243,7 +279,8 @@ document.addEventListener("input", e => {
   const r = e.target.dataset?.req;
   if (r != null) { const orig = S.prev.requests.find(q => q.key === r)?.title, v = e.target.textContent.trim(); if (v && v !== orig) S.titles[r] = v; else delete S.titles[r]; S.html = null; e.target.closest(".req").classList.toggle("edited", r in S.titles); }
 });
-document.addEventListener("keydown", e => { if (e.target.id === "term" && e.key === "Enter") $("#addterm").click(); if (e.target.id === "repo" && e.key === "Enter") $("#usepath").click(); });
+document.addEventListener("toggle", e => { const g = e.target.dataset?.g; if (g) e.target.open ? S.open.add(g) : S.open.delete(g); }, true);
+document.addEventListener("keydown", e => { if (e.key === "Escape" && S.dlg) closeDlg(); if (e.target.id === "term" && e.key === "Enter") $("#addterm").click(); if (e.target.id === "repo" && e.key === "Enter") $("#usepath").click(); });
 function syncForm() { for (const [id, k] of [["since", "since"], ["until", "until"], ["gitauthor", "gitAuthor"], ["client", "client"], ["repo", "repo"]]) { const el = $("#" + id); if (el && id !== "repo") S[k] = el.value.trim(); } }
 document.addEventListener("focusout", e => { if (["since", "until", "gitauthor", "client"].includes(e.target.id)) syncForm(); });
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyTheme);

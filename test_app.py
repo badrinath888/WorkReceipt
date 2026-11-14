@@ -41,7 +41,7 @@ class Core(AppBase):
         r = core.export({"repo": self.repo}, [], {})
         self.assertFalse(r["ok"]); self.assertEqual(r["error"], "review_required")
         self.assertFalse(os.path.isdir(self.out) and os.listdir(self.out))
-        ids = [f["id"] for f in core.build({"repo": self.repo})["findings"] if f["severity"] == "high"]
+        ids = {d["id"]: "unsure" for f in core.build({"repo": self.repo})["findings"] if f["severity"] == "high" for d in f["detections"]}
         key = core.build({"repo": self.repo})["ctx"]["items"][5]["key"]
         r = core.export({"repo": self.repo}, ids, {key: "Edited title AKIAIOSFODNN7EXAMPLE"})
         self.assertTrue(r["ok"])

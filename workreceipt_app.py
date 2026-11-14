@@ -84,6 +84,8 @@ class H(BaseHTTPRequestHandler):
             if n > 2_000_000:
                 return self._json(413, {"error": "request too large"})
             data = json.loads(self.rfile.read(n) or b"{}")
+            if not isinstance(data, dict):
+                raise ValueError
         except ValueError:
             return self._json(400, {"error": "invalid JSON"})
         try:
@@ -95,12 +97,20 @@ class H(BaseHTTPRequestHandler):
                 r = core.export(data, data.get("approved"), data.get("titles"))
                 r.pop("html", None)
                 return self._json(200 if r.get("ok") else 409, r)
+            if self.path == "/api/reveal":
+                # Local-only, one value, only on an explicit confirmed request. Never cached, never logged.
+                if data.get("confirm") is not True:
+                    return self._json(400, {"error": "confirmation required"})
+                r = core.reveal(data, data.get("id"))
+                return self._send(200, json.dumps(r), "application/json")
             if self.path == "/api/settings":
                 return self._json(200, core.save_settings(data))
-        except ValueError as ex:
+        except core.NotFound:
+            return self._json(404, {"error": "That detection no longer exists. The source may have changed or been removed; reload the project."})
+        except core.UserError as ex:                  # messages written by this program only
             return self._json(400, {"error": str(ex)})
-        except Exception as ex:                       # keep the server alive; report the class, not file contents
-            return self._json(500, {"error": f"{type(ex).__name__}: {ex}"})
+        except Exception:                             # never echo exception text: it can contain log content
+            return self._json(500, {"error": "Something went wrong. Nothing was exported."})
         self._json(404, {"error": "unknown endpoint"})
 
 

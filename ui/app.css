@@ -192,3 +192,12 @@ body{overflow-x:hidden}
 @media print{.nav,.toast,.totop{display:none}}
 :root[data-theme=dark] .bars .bar{background:linear-gradient(#34363a,#2a2c2f)}
 :root[data-theme=dark] .frame{background:#fff}
+
+.grp{border-bottom:1px solid var(--line);padding:8px 0}.grp summary{cursor:pointer;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px}
+.gctx{margin:6px 0;color:var(--muted);overflow-wrap:anywhere}.det{margin:8px 0 8px 12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.det .dh{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline}.ctx{margin:8px 0;padding:8px;border-radius:8px;background:var(--sunken);overflow-x:auto}
+.cl{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted)}.cl.hit{color:var(--text)}.cl mark{background:rgba(220,80,60,.22);color:inherit;border-radius:3px;padding:0 2px}
+.dact{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.ovl{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
+.dlgbox{background:var(--surface);color:var(--text);border-radius:14px;max-width:560px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.dlgbox .opt{display:flex;gap:8px;align-items:flex-start;margin:10px 0;font-size:13px}.revealed{background:var(--sunken);padding:10px;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono);font-size:12px;max-height:240px;overflow:auto}
