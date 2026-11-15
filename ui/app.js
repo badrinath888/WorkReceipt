@@ -53,16 +53,20 @@ async function pickFolder(start) {                 // -> path | null.  pickFolde
   try { return (await n.pick_folder(start || null)) || null; }
   catch (e) { pickFolder.failed = true; toast("The folder dialog could not be opened" + (e && e.message ? ": " + e.message : ".")); return null; }
 }
-async function openFile(path, name) {
-  const n = native();
-  if (n && n.open_report) { if (!(await n.open_report(path))) toast("Could not open that file"); return; }
-  window.open("/report/" + encodeURIComponent(name), "_blank", "noopener");
+const fname = p => String(p || "").split(/[\\/]/).pop();
+async function fileAction(method, name, kind) {    // the page sends only a file NAME; the app resolves it against its own report history
+  const n = window.pywebview && window.pywebview.api;
+  if (n && typeof n[method] === "function") {
+    try { const r = await n[method](name, kind || "html"); if (!r || !r.ok) toast((r && r.error) || "Could not complete that action."); }
+    catch (e) { toast("The action could not be completed" + (e && e.message ? ": " + e.message : ".")); }
+    return;
+  }
+  if (DESKTOP) return toast(BRIDGE_DOWN);
+  if (method === "open_report") { const w = window.open("/report/" + encodeURIComponent(name), "_blank", "noopener"); if (!w) toast("The browser blocked the new tab. Allow pop-ups for this page."); return; }
+  toast("Show in Finder is available in the desktop app.");
 }
-async function revealFile(path) {
-  const n = native();
-  if (n && n.reveal) { if (!(await n.reveal(path))) toast("Could not reveal that file"); return; }
-  toast("Reveal in Finder is available in the desktop app. File: " + path);
-}
+const openFile = (name, kind) => fileAction("open_report", name, kind);
+const revealFile = (name, kind) => fileAction("reveal", name, kind);
 async function addProjectFlow(typed) {
   let path = typed || await pickFolder();
   if (!path) { if (!DESKTOP && !native()) { go("projects"); setTimeout(() => $("#repo")?.focus(), 50); toast("Type or paste a folder path, then press Use this folder"); } return null; }
@@ -96,10 +100,16 @@ function dialogHTML() {
   const d = highD().find(x => x.id === g.id); if (!d) return "";
   if (g.kind === "reveal") return `<div class="ovl" role="dialog" aria-modal="true" aria-label="Reveal value"><div class="dlgbox"><h3>Original value</h3><p class="note">${esc(d.where)}, line ${d.line}. Shown only on this screen, only for this detection. It is not logged, stored or sent anywhere, and hides itself in 20 seconds.</p>
     ${g.value == null ? (g.err ? `<p class="note">${esc(g.err)}</p>` : '<p class="note">Loading…</p>') : '<pre class="revealed" id="rv"></pre>'}<div class="dact"><button class="btn dark" data-close="1">Hide and close</button></div></div></div>`;
-  return `<div class="ovl" role="dialog" aria-modal="true" aria-label="Review detection"><div class="dlgbox"><h3>Review detection #${d.n} of ${d.of}</h3><p class="note">${esc(d.rule)} · ${esc(d.where)}${d.line ? ", line " + d.line : ""}. Your choice is recorded for this session only and does not unmask anything: the value stays masked in the report either way.</p>
-    ${Object.entries(DISP).map(([k, v]) => `<label class="opt"><input type="radio" name="disp" value="${k}" ${g.pick === k ? "checked" : ""}> ${v}</label>`).join("")}
-    <label class="opt"><input type="checkbox" id="ack" ${g.ack ? "checked" : ""}> I have inspected this detection myself (or understand I cannot) and I take responsibility for this choice.</label>
-    <div class="dact"><button class="btn dark" id="confirmrev" ${g.pick && g.ack ? "" : "disabled"}>Confirm review</button><button class="btn" data-close="1">Cancel</button></div></div></div>`;
+  const ready = !!(g.pick && g.ack);
+  return `<div class="ovl" role="dialog" aria-modal="true" aria-labelledby="rvt" aria-describedby="rvd"><div class="dlgbox"><h3 id="rvt">Review detection #${d.n} of ${d.of}</h3>
+    <p class="note" id="rvd">${esc(d.rule)} · ${esc(d.where)}${d.line ? ", line " + d.line : ""}. Your choice is recorded for this session only. The value stays masked in the report either way.</p>
+    <fieldset class="rgroup"><legend>1. What is this value?</legend>
+      ${Object.entries(DISP).map(([k, v]) => `<label class="ropt"><input type="radio" name="disp" value="${k}" ${g.pick === k ? "checked" : ""}><span>${v}</span></label>`).join("")}</fieldset>
+    <div class="ack"><div class="ack-h">Required acknowledgement</div>
+      <p class="note">Reviewing a value does <b>not</b> make a credential safe, and it never unmasks anything. If this was a real credential, rotate it.</p>
+      <label class="ropt"><input type="checkbox" id="ack" ${g.ack ? "checked" : ""}><span>I have inspected this detection myself (or understand I cannot) and I take responsibility for this choice.</span></label></div>
+    <p class="why-off" id="rvhint" role="status" ${ready ? "hidden" : ""}>${!g.pick && !g.ack ? "Select a classification and tick the acknowledgement to enable Confirm review." : !g.pick ? "Select a classification to enable Confirm review." : "Tick the required acknowledgement to enable Confirm review."}</p>
+    <div class="dact split"><button class="btn cancel" data-close="1">Cancel</button><button class="btn dark" id="confirmrev" aria-describedby="rvhint" ${ready ? "" : "disabled"}>Confirm review</button></div></div></div>`;
 }
 function closeDlg() { clearTimeout(closeDlg.t); S.dlg = null; const o = $("#dlgroot"); if (o) o.innerHTML = ""; }
 function showDlg() {
@@ -117,10 +127,13 @@ const iso = d => { const z = new Date(d.getTime() - d.getTimezoneOffset() * 6e4)
 const proj = () => (S.data?.projects || []).find(p => p.path === S.repo);
 const pname = () => proj()?.name || (S.repo ? S.repo.split(/[\\/]/).filter(Boolean).pop() : "");
 
+const ICON_MOON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+const ICON_SUN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19"/></svg>';
 function applyTheme() {
   const t = S.data?.settings.theme || "system";
   const dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.dataset.theme = dark ? "dark" : "light";
+  const b = $("#theme"); if (b) { b.innerHTML = dark ? ICON_SUN : ICON_MOON; const l = dark ? "Switch to light theme" : "Switch to dark theme"; b.title = l; b.setAttribute("aria-label", l); }
 }
 function go(id) {                         // switch screen; all state (project, edits, reviews, preview) lives in S and survives
   if (!VIEWS_OK.includes(id)) return;
@@ -147,7 +160,7 @@ function vOverview() {
   const hp = pendingHigh().length;
   const noDir = !d.claude_dir_ok && !ps.length;
   return `<div><div class="ph"><div><h2>Overview <span class="chip">${today()}</span></h2><p>Your projects, recent Claude Code activity and exported reports.</p></div>
-    <div class="act"><button class="btn" id="addproj">${ic("plus")} Add project</button><button class="btn dark" id="genreport">${ic("doc")} Generate report</button><button class="btn" id="openrecent" ${hist.length ? "" : "disabled"}>Open recent report</button></div></div>
+    <div class="act"><button class="btn" id="refresh" title="Rescan projects and reports">Refresh</button><button class="btn" id="addproj">${ic("plus")} Add project</button><button class="btn dark" id="genreport">${ic("doc")} Generate report</button><button class="btn" id="openrecent" ${hist.length ? "" : "disabled"}>Open recent report</button></div></div>
   ${d.git_ok === false ? `<div class="callout err"><div><b>Git is not installed.</b> WorkReceipt needs Git to read commit history. On a Mac, run <span class="mono">xcode-select --install</span> once in Terminal, then reopen WorkReceipt.</div></div>` : ""}
   ${noDir ? `<div class="callout err"><div><b>Claude Code folder not found.</b> No <span class="mono">projects</span> folder at <span class="mono">${esc(d.settings.claude_dir)}</span>. Set the correct location in Settings.</div></div>` : ""}
   <div class="grid g4">
@@ -164,7 +177,7 @@ function vOverview() {
       `<p class="note">Load a project's activity to scan it for secrets. Nothing is checked until you do.</p><button class="linkbtn" data-go="projects">Choose a project ${ic("arrow")}</button>`}
     ${ps.filter(p => p.exists && !p.git).slice(0, 2).map(p => `<div class="row"><div class="grow"><div class="t">${esc(p.name)}</div><div class="s">Not a Git repository — report would have no delivered changes</div></div></div>`).join("")}</div></div>
   <div class="card sec"><h3>Recent reports <span class="chip">${hist.length}</span></h3>
-    ${hist.length ? `<table class="tbl"><thead><tr><th>Project</th><th>Period</th><th class="hide-m">Requests</th><th class="hide-m">Commits</th><th>Exported</th><th></th></tr></thead><tbody>${hist.slice(0, 6).map(h => `<tr><td><b style="font-weight:500">${esc(h.project)}</b></td><td class="mono">${esc(h.period)}</td><td class="hide-m">${h.requests}</td><td class="hide-m">${h.commits}</td><td>${esc(h.at)}</td><td style="text-align:right"><button class="btn sm" data-open="${esc(h.html)}">Open</button></td></tr>`).join("")}</tbody></table>` : `<div class="empty"><b>No reports yet</b>Pick a project, load its activity and export your first report.<br><button class="btn dark" data-go="projects">Choose a project</button></div>`}</div></div>`;
+    ${hist.length ? `<table class="tbl"><thead><tr><th>Project</th><th>Period</th><th class="hide-m">Requests</th><th class="hide-m">Commits</th><th>Exported</th><th></th></tr></thead><tbody>${hist.slice(0, 6).map(h => `<tr><td><b style="font-weight:500">${esc(h.project)}</b></td><td class="mono">${esc(h.period)}</td><td class="hide-m">${h.requests}</td><td class="hide-m">${h.commits}</td><td>${esc(h.at)}</td><td style="text-align:right"><button class="btn sm" data-open="${esc(fname(h.html))}" data-kind="html">Open</button></td></tr>`).join("")}</tbody></table>` : `<div class="empty"><b>No reports yet</b>Pick a project, load its activity and export your first report.<br><button class="btn dark" data-go="projects">Choose a project</button></div>`}</div></div>`;
 }
 
 /* ---------- Projects ---------- */
@@ -178,7 +191,7 @@ function vProjects() {
   <div class="grid sec" style="grid-template-columns:1fr auto;align-items:end"><label class="field">Or enter a repository folder
     <input id="repo" value="${esc(S.repoDraft ?? S.repo)}" placeholder="/Users/you/projects/client-site" spellcheck="false"></label><button class="btn" id="usepath">Use this folder</button></div></div>
   <div class="card sec"><h3>Period &amp; filters ${p ? `<span class="chip">${esc(p.name)}</span>` : ""}</h3>
-    <div class="pill-row" style="margin-bottom:12px">${[["Last 7 days", 7], ["Last 30 days", 30], ["Last 90 days", 90]].map(([l, n]) => `<button class="pill" data-range="${n}">${l}</button>`).join("")}<button class="pill" data-range="month">This month</button><button class="pill" data-range="all">All time</button></div>
+    <div class="pill-row" role="group" aria-label="Date range" style="margin-bottom:12px">${[["Last 7 days", "7"], ["Last 30 days", "30"], ["Last 90 days", "90"], ["This month", "month"], ["All time", "all"]].map(([l, n]) => `<button type="button" class="pill${activeRange() === n ? " on" : ""}" data-range="${n}" aria-pressed="${activeRange() === n}">${l}</button>`).join("")}</div>
     <div class="grid gform"><label class="field">From<input type="date" id="since" value="${esc(S.since)}"></label><label class="field">To<input type="date" id="until" value="${esc(S.until)}"></label>
     <label class="field">Only commits by (optional)<input id="gitauthor" value="${esc(S.gitAuthor)}" placeholder="name or email"></label>
     <label class="field">Client name<input id="client" value="${esc(S.client)}" placeholder="Acme Co"></label></div>
@@ -197,7 +210,7 @@ function vStudio() {
   return `<div><div class="ph"><div><h2>Report Studio <span class="chip">${esc(P.project)}</span></h2><p>${esc(P.period)} · Git is the evidence of delivered changes; requests are not proof of completion.</p></div>
     <div class="act"><button class="btn" id="preview">${S.html ? "Refresh preview" : "Preview"}</button><button class="btn dark" id="export" ${S.exporting ? "disabled" : ""}>${ic("dl")} Export report</button></div></div>
   ${pend ? `<div class="callout"><div><b>${pend} high-severity masked value${pend > 1 ? "s" : ""} not reviewed yet.</b> Export unlocks after you review each one in the <a href="#privacy" data-go="privacy" style="color:var(--teal);font-weight:500">Privacy Center</a>.</div></div>` : ""}
-  ${S.lastExport ? `<div class="callout ok"><div><b>Exported.</b> Saved to <span class="mono">${esc(S.lastExport.html_path)}</span>${S.lastExport.pdf_path ? ` and <span class="mono">${esc(S.lastExport.pdf_path)}</span>` : ""}.${S.lastExport.pdf_failed ? " <b>The PDF could not be created</b>; the HTML file was saved." : ""} <button class="linkbtn" data-open="${esc(S.lastExport.html_path)}">Open report</button></div></div>` : ""}
+  ${S.lastExport ? `<div class="callout ok"><div><b>Exported.</b> Saved to <span class="mono">${esc(S.lastExport.html_path)}</span>${S.lastExport.pdf_path ? ` and <span class="mono">${esc(S.lastExport.pdf_path)}</span>` : ""}.${S.lastExport.pdf_failed ? ` <b>The PDF could not be created</b>; the HTML file was saved.${S.lastExport.pdf_error ? ` <span class="note">Reason: ${esc(S.lastExport.pdf_error)}</span>` : ""}` : ""} <button class="linkbtn" data-open="${esc(fname(S.lastExport.html_path))}" data-kind="html">Open report</button> · <button class="linkbtn" data-showfile="${esc(fname(S.lastExport.html_path))}" data-kind="html">Show in Finder</button>${S.lastExport.pdf_path ? ` · <button class="linkbtn" data-open="${esc(fname(S.lastExport.pdf_path))}" data-kind="pdf">Open PDF</button>` : ""}</div></div>` : ""}
   <div class="grid g4">
     <div class="card stat"><div class="k">Work requests</div><div class="v">${P.requests.length}</div><div class="d">${nTitles ? nTitles + " edited" : "from session logs"}</div></div>
     <div class="card stat"><div class="k">Commits ${ic("git", 13)}</div><div class="v">${P.n_commits}</div><div class="d">${P.authors} author(s)</div></div>
@@ -241,12 +254,12 @@ function vSettings() {
   const s = S.data.settings;
   return `<div><div class="ph"><div><h2>Settings</h2><p>Local directories, appearance and report defaults.</p></div><div class="act"><button class="btn dark" id="savesettings">Save settings</button></div></div>
   ${DESKTOP && B.state === "failed" ? `<div class="callout err"><div><b>Native folder dialog unavailable.</b> ${BRIDGE_DOWN}</div></div>` : ""}
-  <div class="grid g3f"><div class="card"><h3>Local directories</h3><div class="grid"><label class="field">Claude Code folder<span class="inrow"><input id="s_claude" value="${esc(s.claude_dir)}" spellcheck="false"><button type="button" class="btn sm" data-choose="s_claude">Choose…</button></span><small>${S.data.claude_dir_ok ? "projects folder found" : "no projects folder at this location"}</small></label>
-    <label class="field">Default reports folder<span class="inrow"><input id="s_out" value="${esc(s.out_dir)}" spellcheck="false"><button type="button" class="btn sm" data-choose="s_out">Choose…</button></span><small>Created on first export</small></label></div></div>
+  <div class="grid g2s"><div class="card" style="grid-column:1/-1"><h3>Local directories</h3><div class="grid"><label class="field">Claude Code folder<span class="inrow"><input id="s_claude" class="path" title="${esc(s.claude_dir)}" value="${esc(s.claude_dir)}" spellcheck="false"><button type="button" class="btn sm" data-choose="s_claude">Choose…</button></span><small>${S.data.claude_dir_ok ? "projects folder found" : "no projects folder at this location"}</small></label>
+    <label class="field">Default reports folder<span class="inrow"><input id="s_out" class="path" title="${esc(s.out_dir)}" value="${esc(s.out_dir)}" spellcheck="false"><button type="button" class="btn sm" data-choose="s_out">Choose…</button></span><small>Created on first export</small></label></div></div>
   <div class="card"><h3>Appearance</h3><div class="seg" id="s_theme">${["system", "light", "dark"].map(t => `<button data-theme="${t}" class="${s.theme === t ? "on" : ""}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}</div></div>
   <div class="card"><h3>Report defaults</h3><div class="grid"><label class="field">Prepared by<input id="s_author" value="${esc(s.author)}" placeholder="Your name"></label><label class="field">Default client<input id="s_client" value="${esc(s.client)}" placeholder="Optional"></label></div></div></div>
   <div class="card sec"><h3>Always-redact terms</h3><label class="field"><span>One per line. Saved on this computer and applied to every report.</span><textarea id="s_terms" rows="4" style="border:1px solid var(--line-2);border-radius:10px;background:var(--surface);padding:9px 11px;font-size:13px;resize:vertical" spellcheck="false">${esc((s.redact_terms || []).join("\n"))}</textarea></label></div>
-  <div class="card sec"><h3>About this app</h3><div class="grid gform"><div class="note"><b>Version</b><br>WorkReceipt ${esc(S.data.version)}</div><div class="note"><b>Engine</b><br>Python report engine (stdlib only)</div><div class="note"><b>Server</b><br>${esc(location.host)} — this computer only</div><div class="note"><b>Data</b><br>Settings and report history: <span class="mono">~/.workreceipt</span></div></div></div>
+  <div class="card sec"><h3>About this app</h3><div class="grid gform"><div class="note"><b>Version</b><br>WorkReceipt ${esc(S.data.version)}</div><div class="note"><b>Engine</b><br>Local Python report engine · native macOS window</div><div class="note"><b>Server</b><br>${esc(location.host)} — this computer only</div><div class="note"><b>Data</b><br>Settings and history: <span class="mono path-txt">${esc(S.data.home)}</span></div></div></div>
   <div class="card sec"><h3>Privacy &amp; storage</h3><p class="note">Everything runs on this computer. No account, no telemetry, no uploads, no AI service. Detected secrets are never stored: settings and report history hold only project names, dates, counts and file paths. Local data: <span class="mono">${esc(S.data.home)}</span>. Reports are saved to your reports folder.</p></div>
   <div class="card sec"><h3>Updates</h3><p class="note">Manual updates: download the newest WorkReceipt from its release page, open the disk image and drag the app to Applications, replacing the old one. Your settings and reports are kept. This app does not check for updates automatically.</p></div>
   <div class="card sec"><h3>PDF export</h3><p class="note">${S.data.chrome ? "“Export report” creates an HTML file and a PDF. The PDF is made from the already-masked HTML, on this computer." : "PDF export is not available in this environment. Open the exported HTML and use Print → Save as PDF."}</p></div></div>`;
@@ -259,7 +272,7 @@ function vReports() {
   return `<div><div class="ph"><div><h2>Reports <span class="chip">${all.length}</span></h2><p>Reports exported from this app, stored on this computer.</p></div><div class="act"><button class="btn dark" id="genreport">${ic("doc")} New report</button></div></div>
   <div class="card"><div class="grid gform"><label class="field">Search project or client<input id="rq" type="search" value="${esc(S.q)}" placeholder="Search" spellcheck="false"></label><label class="field">From<input type="date" id="rf" value="${esc(S.rf)}"></label><label class="field">To<input type="date" id="rt" value="${esc(S.rt)}"></label></div></div>
   <div class="card sec">${list.length ? `<table class="tbl"><thead><tr><th>Project</th><th class="hide-m">Client</th><th>Period</th><th class="hide-m">Items</th><th>Exported</th><th></th></tr></thead><tbody>${list.map(h => { const n = esc(h.html.split(/[\\/]/).pop()); return `<tr><td><b style="font-weight:500">${esc(h.project)}</b></td><td class="hide-m">${esc(h.client || "—")}</td><td class="mono">${esc(h.period)}</td><td class="hide-m">${h.requests} req · ${h.commits} commits</td><td>${esc(h.at)}</td>
-    <td style="text-align:right;white-space:nowrap"><button class="btn sm" data-open="${esc(h.html)}">Open</button> ${h.pdf ? `<button class="btn sm" data-open="${esc(h.pdf)}">PDF</button> ` : ""}<button class="btn sm" data-showfile="${esc(h.html)}">Show in Finder</button> <button class="btn sm" data-delrep="${n}" aria-label="Delete report ${esc(h.project)}">Delete</button></td></tr>`; }).join("")}</tbody></table>` :
+    <td style="text-align:right;white-space:nowrap"><button class="btn sm" data-open="${esc(fname(h.html))}" data-kind="html">Open</button> ${h.pdf ? `<button class="btn sm" data-open="${esc(fname(h.pdf))}" data-kind="pdf">PDF</button> ` : ""}<button class="btn sm" data-showfile="${esc(fname(h.html))}" data-kind="html">Show in Finder</button> <button class="btn sm" data-delrep="${n}" aria-label="Delete report ${esc(h.project)}">Delete</button></td></tr>`; }).join("")}</tbody></table>` :
     `<div class="empty"><b>${all.length ? "No reports match" : "No reports yet"}</b>${all.length ? "Clear the search or date filters." : "Export a report from Report Studio and it will be listed here."}</div>`}</div></div>`;
 }
 
@@ -298,7 +311,12 @@ function fitFrame() {
 addEventListener("resize", () => fitFrame());
 
 /* ---------- actions ---------- */
-async function loadState() { S.data = await api("/api/state"); applyTheme(); }
+async function loadState() { S.data = await api("/api/state"); S.loadedAt = Date.now(); applyTheme(); }
+async function autoRefresh() {                           // when the window regains focus after a while (projects/reports may have changed on disk)
+  if (!S.data || S.dlg || S.ob || document.hidden || Date.now() - (S.loadedAt || 0) < 20000) return;
+  try { await loadState(); render(); } catch (e) { }
+}
+addEventListener("focus", autoRefresh); document.addEventListener("visibilitychange", autoRefresh);
 async function load() {
   S.loading = true; S.err = ""; S.html = null; S.lastExport = null; render();
   try {
@@ -310,7 +328,8 @@ async function load() {
 }
 async function makePreview() {
   try { S.html = (await api("/api/render", { ...opts(), titles: S.titles })).html; } catch (e) { toast(e.message); }
-  render(); setTimeout(() => $(".frame")?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+  cache.screen = null; render();                       // force a fresh iframe so it starts at the top, not at an old scroll position
+  const f = $(".frame"); if (f) { try { f.contentWindow.scrollTo(0, 0); } catch (e) { } f.closest(".card").scrollIntoView({ block: "start" }); $("#screen").scrollTop = Math.max(0, $("#screen").scrollTop - 8); }
 }
 async function doExport() {
   if (pendingHigh().length) { toast("Review high-severity findings first"); go("privacy"); return; }
@@ -329,6 +348,13 @@ async function saveSettings(msg) {                  // persists every Settings f
     await loadState(); if (!S.author) S.author = S.data.settings.author; if (!S.client) S.client = S.data.settings.client; cache.screen = null; render(); toast(msg);
   } catch (er) { toast(er.message); }
 }
+function rangeFor(k) {
+  const now = new Date();
+  if (k === "all") return ["", ""];
+  if (k === "month") return [iso(new Date(now.getFullYear(), now.getMonth(), 1)), iso(now)];
+  return [iso(new Date(now - (+k - 1) * 864e5)), iso(now)];
+}
+function activeRange() { for (const k of ["7", "30", "90", "month", "all"]) { const [a, b] = rangeFor(k); if (S.since === a && S.until === b) return k; } return ""; }
 function setRange(k) {
   const now = new Date();
   if (k === "all") { S.since = ""; S.until = ""; } else if (k === "month") { S.since = iso(new Date(now.getFullYear(), now.getMonth(), 1)); S.until = iso(now); }
@@ -340,8 +366,8 @@ async function rescan() { if (S.repo) { await load(); } else render(); }
 document.addEventListener("click", async e => {
   const t = e.target.closest("[data-open],[data-showfile],[data-delrep],[data-rmproj],[data-choose],[data-go],[data-pick],[data-range],[data-rmterm],button[data-theme],[data-toggle],[data-reveal],[data-review],[data-close],button[id]");
   if (!t) return;
-  if (t.dataset.open) { const n = t.dataset.open.split(/[\\/]/).pop(); return openFile(t.dataset.open, n); }
-  if (t.dataset.showfile) return revealFile(t.dataset.showfile);
+  if (t.dataset.open) return openFile(t.dataset.open, t.dataset.kind);
+  if (t.dataset.showfile) return revealFile(t.dataset.showfile, t.dataset.kind);
   if (t.dataset.delrep) { S.dlg = { kind: "delrep", name: t.dataset.delrep }; return showDlg(); }
   if (t.dataset.rmproj) { S.dlg = { kind: "rmproj", path: t.dataset.rmproj }; return showDlg(); }
   if (t.dataset.choose) { const v = await pickFolder(); if (v) { $("#" + t.dataset.choose).value = v; await saveSettings("Folder saved"); } else if (!DESKTOP && !native()) toast("Type or paste the folder path"); return; }
@@ -355,11 +381,11 @@ document.addEventListener("click", async e => {
   if (t.dataset.rmterm != null) { S.terms.splice(+t.dataset.rmterm, 1); return rescan(); }
   if (t.dataset.theme) { S.data.settings.theme = t.dataset.theme; applyTheme(); return render(); }
   switch (t.id) {
-    case "theme": S.data.settings.theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark"; applyTheme(); api("/api/settings", { theme: S.data.settings.theme }); break;
+    case "theme": S.data.settings.theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark"; applyTheme(); cache.screen = null; render(); api("/api/settings", { theme: S.data.settings.theme }); break;
     case "addproj": await addProjectFlow(); break;
     case "refresh": await loadState(); render(); toast("Project list refreshed"); break;
     case "genreport": if (S.prev) go("studio"); else if (S.repo) { go("projects"); await load(); } else { go("projects"); toast("Select a project, then Load activity"); } break;
-    case "openrecent": { const h = S.data.history[0]; if (h) openFile(h.html, h.html.split(/[\\/]/).pop()); break; }
+    case "openrecent": { const h = S.data.history[0]; if (h) openFile(fname(h.html), "html"); break; }
     case "obnext": S.ob.step++; showOb(); break;
     case "obback": S.ob.step--; showOb(); break;
     case "obskip": await finishOb("overview"); break;
@@ -378,8 +404,12 @@ document.addEventListener("click", async e => {
   }
 });
 document.addEventListener("change", e => {
-  if (e.target.name === "disp" && S.dlg) { S.dlg.pick = e.target.value; showDlg(); }
-  if (e.target.id === "ack" && S.dlg) { S.dlg.ack = e.target.checked; showDlg(); }
+  if (S.dlg?.kind === "review" && (e.target.name === "disp" || e.target.id === "ack")) {      // update in place so keyboard focus stays put
+    if (e.target.name === "disp") S.dlg.pick = e.target.value; else S.dlg.ack = e.target.checked;
+    const ok = !!(S.dlg.pick && S.dlg.ack), b = $("#confirmrev"), h = $("#rvhint");
+    b.disabled = !ok; h.hidden = ok;
+    h.textContent = !S.dlg.pick && !S.dlg.ack ? "Select a classification and tick the acknowledgement to enable Confirm review." : !S.dlg.pick ? "Select a classification to enable Confirm review." : "Tick the required acknowledgement to enable Confirm review.";
+  }
 });
 document.addEventListener("input", e => {
   if (e.target.id === "repo") S.repoDraft = e.target.value;
@@ -398,6 +428,7 @@ window.wrCommand = async c => {
   if (c === "preview") { if (!S.prev) return toast("Load a project's activity first"); go("studio"); return makePreview(); }
 };
 document.addEventListener("keydown", e => {
+  if (e.key === "Tab" && S.dlg) { const f = [...document.querySelectorAll("#dlgroot input,#dlgroot button")].filter(x => !x.disabled && x.offsetParent !== null); if (f.length) { const i = f.indexOf(document.activeElement); if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); } else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); } } }
   if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && !S.ob) {
     const nav = { 1: "overview", 2: "projects", 3: "studio", 4: "privacy", 5: "reports", ",": "settings" }[e.key];
     const cmd = nav ? "go:" + nav : { o: "add", r: "refresh", e: "export", p: "preview" }[e.key];

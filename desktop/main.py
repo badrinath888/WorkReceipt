@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """WorkReceipt desktop shell: native window around the local engine. Local only."""
-import atexit, os, subprocess, sys, threading
+import atexit, os, shutil, subprocess, sys, threading
 from http.server import ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -41,21 +41,40 @@ class Api:
         r = self._window.create_file_dialog(kind, directory=d)
         return str(r[0]) if r else None
 
-    def reveal(self, path):
-        # Only reveal files this app exported.
-        known = {p for rec in core.history() for p in (rec.get("html"), rec.get("pdf")) if p}
-        if path in known and os.path.exists(path) and sys.platform == "darwin":
-            subprocess.run(["open", "-R", path], check=False)
-            return True
-        return False
+    # The page sends only a report FILE NAME; core.resolve_report maps it to a path from the app's own history (never a frontend path).
+    def open_report(self, name, kind="html"):
+        return self._launch(name, kind, [])
+
+    def reveal(self, name, kind="html"):
+        return self._launch(name, kind, ["-R"])
+
+    def _launch(self, name, kind, flags):
+        try:
+            path = core.resolve_report(name, kind)
+        except core.UserError as e:
+            return {"ok": False, "error": str(e)}
+        try:
+            run_opener(flags + [path])
+        except OpenError as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True}
 
 
-    def open_report(self, path):
-        known = {p for rec in core.history() for p in (rec.get("html"), rec.get("pdf")) if p}
-        if path in known and os.path.exists(path) and sys.platform == "darwin":
-            subprocess.run(["open", path], check=False)
-            return True
-        return False
+class OpenError(RuntimeError):
+    pass
+
+
+def run_opener(args):
+    """macOS `open` (default browser for .html, `-R` reveals in Finder). Raises OpenError with a user-readable message."""
+    exe = "/usr/bin/open" if sys.platform == "darwin" else (shutil.which("xdg-open") or "")
+    if not exe or (args and args[0] == "-R" and sys.platform != "darwin"):
+        raise OpenError("Opening files is only supported in the macOS app")
+    try:
+        r = subprocess.run([exe, *args], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        raise OpenError("macOS could not open the file (the open command failed to run)")
+    if r.returncode != 0:
+        raise OpenError("macOS could not open the file. Try Show in Finder, or open it from your reports folder")
 
 
 # (menu label, command understood by window.wrCommand in ui/app.js). Shortcuts are handled in the page (Cmd+key); the

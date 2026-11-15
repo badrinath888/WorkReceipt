@@ -17,7 +17,7 @@ class Shell(unittest.TestCase):
             urllib.request.urlopen(url, timeout=1)
 
     def test_reveal_rejects_unknown_paths(self):
-        self.assertFalse(dm.Api().reveal("/etc/passwd"))
+        self.assertFalse(dm.Api().reveal("/etc/passwd")["ok"])
 
 
 class Bridge(unittest.TestCase):

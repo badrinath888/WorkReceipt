@@ -122,15 +122,100 @@ class Errors(unittest.TestCase):
 
 
 class FinderReveal(unittest.TestCase):
-    def test_only_files_workreceipt_exported(self):
-        ws = WS(); self.addCleanup(ws.done); ws.log([ws.user("add login page")])
-        r = core.export({"repo": ws.repo}, {}, {}); self.assertTrue(r["ok"])
-        other = os.path.join(ws.root, "other.html"); open(other, "w").write("x")
-        with mock.patch.object(dm.sys, "platform", "darwin"), mock.patch.object(dm.subprocess, "run") as run:
+    """Open report / Show in Finder: the page sends a file NAME only; the app resolves it from its own history."""
+    def setUp(self):
+        self.ws = WS(); self.addCleanup(self.ws.done); self.ws.log([self.ws.user("add login page")])
+        self.r = core.export({"repo": self.ws.repo}, {}, {}); self.assertTrue(self.r["ok"])
+        self.name = os.path.basename(self.r["html_path"])
+
+    def test_resolve_accepts_only_exported_names(self):
+        self.assertEqual(core.resolve_report(self.name), self.r["html_path"])
+        other = os.path.join(self.ws.root, "other.html"); open(other, "w").write("x")
+        for bad in ("../" + self.name, self.r["html_path"], other, "/etc/hosts", "other.html", "", None, 5, "..", "a/b.html"):
+            with self.subTest(bad), self.assertRaisesRegex(core.UserError, "not a WorkReceipt report"): core.resolve_report(bad)
+        with self.assertRaisesRegex(core.UserError, "not a WorkReceipt report"): core.resolve_report(self.name, "exe")
+        with self.assertRaisesRegex(core.UserError, "not a WorkReceipt report"): core.resolve_report(self.name, "pdf")   # no PDF was exported
+
+    def test_missing_file_symlink_and_permission_errors(self):
+        with mock.patch.object(core.os, "access", return_value=False), self.assertRaisesRegex(core.UserError, "permission"): core.resolve_report(self.name)
+        os.rename(self.r["html_path"], self.r["html_path"] + ".moved")
+        with self.assertRaisesRegex(core.UserError, "no longer exists"): core.resolve_report(self.name)
+        os.symlink("/etc/hosts", self.r["html_path"])                  # a symlink swapped in after export must not be followed
+        with self.assertRaisesRegex(core.UserError, "no longer exists"): core.resolve_report(self.name)
+
+    def test_api_success_runs_open_with_resolved_path_only(self):
+        with mock.patch.object(dm, "run_opener") as run:
             api = dm.Api()
-            self.assertFalse(api.reveal(other)); self.assertFalse(api.reveal("/etc/hosts")); self.assertFalse(api.open_report(other)); run.assert_not_called()
-            self.assertTrue(api.reveal(r["html_path"])); self.assertEqual(run.call_args[0][0], ["open", "-R", r["html_path"]])
-            self.assertTrue(api.open_report(r["html_path"]))
+            self.assertEqual(api.open_report(self.name), {"ok": True}); run.assert_called_with([self.r["html_path"]])
+            self.assertEqual(api.reveal(self.name), {"ok": True}); run.assert_called_with(["-R", self.r["html_path"]])
+            run.reset_mock()
+            for bad in ("/etc/hosts", "../x.html", "nope.html"):
+                res = api.open_report(bad); self.assertFalse(res["ok"]); self.assertTrue(res["error"]); self.assertFalse(api.reveal(bad)["ok"])
+            run.assert_not_called()
+
+    def test_api_reports_missing_and_opener_failures(self):
+        api = dm.Api()
+        os.remove(self.r["html_path"])
+        res = api.open_report(self.name); self.assertFalse(res["ok"]); self.assertIn("no longer exists", res["error"])
+
+    def test_run_opener_error_messages(self):
+        with mock.patch.object(dm.sys, "platform", "darwin"):
+            with mock.patch.object(dm.subprocess, "run", return_value=mock.Mock(returncode=1, stderr="x")), self.assertRaisesRegex(dm.OpenError, "could not open"): dm.run_opener(["/x"])
+            with mock.patch.object(dm.subprocess, "run", side_effect=OSError("boom")), self.assertRaisesRegex(dm.OpenError, "failed to run"): dm.run_opener(["/x"])
+            with mock.patch.object(dm.subprocess, "run", return_value=mock.Mock(returncode=0)) as run:
+                dm.run_opener(["-R", "/x"]); self.assertEqual(run.call_args[0][0], ["/usr/bin/open", "-R", "/x"])
+        api = dm.Api()
+        with mock.patch.object(dm, "run_opener", side_effect=dm.OpenError("macOS could not open the file")):
+            self.assertEqual(api.open_report(self.name), {"ok": False, "error": "macOS could not open the file"})
+
+
+class PdfBackendFailures(unittest.TestCase):
+    """The macOS WebKit code itself cannot run on Linux; these tests cover its failure handling and the error plumbing."""
+    def test_import_failure_is_immediate_and_names_the_stage(self):
+        from desktop import pdf_mac
+        with mock.patch.dict(sys.modules, {"PyObjCTools": None}):
+            with self.assertRaises(pdf_mac.PdfError) as c: pdf_mac.render_pdf("<p>x</p>", "/tmp/x.pdf", timeout=1)
+        self.assertEqual(c.exception.stage, "import")
+
+    def _fake_apphelper(self, runner):
+        import types
+        pkg = types.ModuleType("PyObjCTools"); mod = types.ModuleType("PyObjCTools.AppHelper"); mod.callAfter = runner; pkg.AppHelper = mod
+        return mock.patch.dict(sys.modules, {"PyObjCTools": pkg, "PyObjCTools.AppHelper": mod})
+
+    def test_setup_error_on_main_thread_fails_fast_not_after_timeout(self):
+        import time
+        from desktop import pdf_mac
+        t0 = time.time()
+        with self._fake_apphelper(lambda fn, *a: fn(*a)), self.assertRaises(pdf_mac.PdfError) as c:     # no AppKit here: start() must report, not hang
+            pdf_mac.render_pdf("<p>x</p>", "/tmp/never.pdf", timeout=30)
+        self.assertLess(time.time() - t0, 5); self.assertEqual(c.exception.stage, "setup"); self.assertEqual(pdf_mac._JOBS, set())
+
+    def test_timeout_names_the_stuck_stage_and_releases_the_job(self):
+        from desktop import pdf_mac
+        with self._fake_apphelper(lambda fn, *a: None), self.assertRaises(pdf_mac.PdfError) as c: pdf_mac.render_pdf("<p>x</p>", "/tmp/never.pdf", timeout=0.2)
+        self.assertEqual(c.exception.stage, "timeout"); self.assertIn("stuck at", c.exception.reason); self.assertEqual(pdf_mac._JOBS, set())
+
+    def test_valid_pdf_check(self):
+        from desktop import pdf_mac
+        d = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, d, True)
+        good, empty, junk = (os.path.join(d, n) for n in ("g.pdf", "e.pdf", "j.pdf"))
+        open(good, "wb").write(b"%PDF-1.4\n" + b"x" * 200); open(empty, "wb").close(); open(junk, "wb").write(b"<html>" + b"x" * 200)
+        self.assertTrue(pdf_mac.valid_pdf(good)); self.assertFalse(pdf_mac.valid_pdf(empty)); self.assertFalse(pdf_mac.valid_pdf(junk)); self.assertFalse(pdf_mac.valid_pdf(d + "/none"))
+
+    def test_export_surfaces_a_non_sensitive_reason_and_logs_it(self):
+        from desktop import pdf_mac
+        ws = WS(); self.addCleanup(ws.done); self.addCleanup(setattr, core, "PDF_BACKEND", None)
+        ws.log([ws.user("deploy")] + ws.bash("c1", f"pytest -q; mysql --password {HI}", result="ok", err=False))
+        ids = {d["id"]: "unsure" for f in ws.build()["findings"] for d in f["detections"] if f["severity"] == "high" and not d["suppressed"]}
+        def backend(html, out): raise pdf_mac.PdfError("print", "WebKit said no")
+        core.PDF_BACKEND = backend
+        r = core.export({"repo": ws.repo, "pdf": True}, ids, {})
+        self.assertTrue(r["ok"] and r["pdf_failed"] and os.path.exists(r["html_path"]) and not r["pdf_path"])
+        self.assertEqual(r["pdf_error"], "print: WebKit said no")
+        self.assertIn("print: WebKit said no", open(os.path.join(core._home(), "pdf-last-error.txt")).read())
+        core.PDF_BACKEND = lambda h, o: (_ for _ in ()).throw(ValueError(HI))             # foreign exception text is never surfaced
+        r = core.export({"repo": ws.repo, "pdf": True}, ids, {})
+        self.assertEqual(r["pdf_error"], "ValueError"); self.assertNotIn(HI, json.dumps({k: v for k, v in r.items() if k != "html"}))
 
 
 if __name__ == "__main__":

@@ -169,6 +169,82 @@ class E2E(unittest.TestCase):
         pg.evaluate("window.__install()"); pg.wait_for_function("!document.querySelector('#addproj').disabled")
         pg.click("#addproj"); pg.wait_for_selector("tr[data-pick]:has-text('picked-proj')"); self.assertEqual(self.errs, []); pg.close()
 
+    # ---- macOS validation fixes: real clicks, no forced UI state ----
+    REC = "window.__calls=[];window.pywebview={api:{pick_folder:async()=>null,ping:async()=>true,open_report:async(n,k)=>{window.__calls.push(['open',n,k]);return window.__res||{ok:true}},reveal:async(n,k)=>{window.__calls.push(['reveal',n,k]);return window.__res||{ok:true}}}};"
+
+    def load_demo(self, pg, stub=""):
+        self.core.enable_demo(); self.core.save_settings({"onboarded": True})
+        pg.goto(self.url + "#projects"); pg.wait_for_selector("tr[data-pick]")
+        pg.click("tr[data-pick]:has-text('acme-storefront')"); pg.click("#load"); pg.wait_for_selector(".callout.ok:has-text('Loaded')", timeout=60000)
+
+    def review_all(self, pg):
+        pg.click(".tab[data-go=privacy]"); pg.wait_for_selector(".gh[data-toggle]")
+        for _ in range(10):
+            b = pg.locator("[data-toggle]").first
+            if b.get_attribute("aria-expanded") != "true": b.click()
+            r = pg.locator("[data-review]:not(:has-text('Change'))")
+            if r.count() == 0: break
+            r.first.click(); pg.click(".ropt:has-text('Unsure')"); pg.click(".ack .ropt"); pg.click("#confirmrev")
+
+    def test_a_review_dialog_ux(self):
+        pg = self.page(); self.load_demo(pg); pg.click(".tab[data-go=privacy]"); pg.wait_for_selector(".gh[data-toggle]")
+        pg.locator("[data-toggle]").first.click(); pg.click("[data-review]")
+        self.assertEqual(pg.locator(".rgroup input[type=radio]").count(), 3)                  # three classifications, own group
+        self.assertEqual(pg.locator(".rgroup input[type=checkbox]").count(), 0)               # acknowledgement is NOT in the radio group
+        self.assertIn("Required acknowledgement", pg.inner_text(".ack")); self.assertIn("not", pg.inner_text(".ack"))
+        self.assertTrue(pg.is_disabled("#confirmrev")); self.assertIn("Select a classification and tick the acknowledgement", pg.inner_text("#rvhint"))
+        pg.click(".ropt:has-text('Real credential')")                                           # classification only -> still disabled, hint says what is missing
+        self.assertTrue(pg.is_disabled("#confirmrev")); self.assertIn("Tick the required acknowledgement", pg.inner_text("#rvhint"))
+        pg.click(".ack .ropt"); self.assertFalse(pg.is_disabled("#confirmrev")); self.assertTrue(pg.is_hidden("#rvhint"))
+        pg.click(".ack .ropt"); self.assertTrue(pg.is_disabled("#confirmrev"))                  # un-ticking disables again
+        self.assertIn("cancel", pg.get_attribute("[data-close]", "class"))
+        pg.click("[data-close]"); self.assertEqual(pg.locator(".dlgbox").count(), 0)             # cancel records nothing
+        self.assertTrue(pg.locator("[data-review]:not(:has-text('Change'))").count() >= 1)
+        pg.click("[data-review]")                                                               # keyboard: focus stays on the radio when arrows change the choice
+        pg.focus(".rgroup input[type=radio]"); pg.keyboard.press("ArrowDown")
+        self.assertEqual(pg.evaluate("document.activeElement.name"), "disp"); self.assertTrue(pg.evaluate("document.querySelector('.rgroup input:checked')!==null"))
+        pg.keyboard.press("Tab"); self.assertEqual(pg.evaluate("document.activeElement.id"), "ack")
+        pg.keyboard.press("Space"); self.assertFalse(pg.is_disabled("#confirmrev"))
+        self.assertNotEqual(pg.evaluate("getComputedStyle(document.activeElement.closest('.ropt')).outlineStyle"), "none")      # visible focus ring
+        pg.keyboard.press("Escape"); self.assertEqual(pg.locator(".dlgbox").count(), 0); self.assertEqual(self.errs, []); pg.close()
+
+    def test_b_open_and_reveal_send_names_only_and_show_errors(self):
+        pg = self.page(); pg.add_init_script(self.REC); self.load_demo(pg); self.review_all(pg)
+        pg.click(".tab[data-go=studio]"); pg.click("#export"); pg.wait_for_selector(".callout.ok:has-text('Exported')", timeout=60000)
+        pg.click(".callout.ok [data-open]"); pg.click(".callout.ok [data-showfile]")
+        calls = pg.evaluate("window.__calls"); self.assertEqual([c[0] for c in calls], ["open", "reveal"])
+        for c in calls: self.assertTrue(c[1].endswith(".html") and "/" not in c[1] and "\\" not in c[1], c); self.assertEqual(c[2], "html")
+        pg.evaluate("window.__res={ok:false,error:'That report file no longer exists. It may have been moved or deleted'}")   # simulate backend refusal
+        pg.click(".callout.ok [data-open]"); pg.wait_for_selector("#toast.on:has-text('no longer exists')")
+        pg.click(".tab[data-go=reports]"); pg.click("[data-open]"); pg.click("[data-showfile]"); self.assertEqual(len(pg.evaluate("window.__calls")), 5)
+        self.assertEqual(self.errs, []); pg.close()
+
+    def test_c_theme_icon_pills_overview_refresh_preview_settings(self):
+        pg = self.page(); self.load_demo(pg)
+        self.assertEqual(pg.inner_text("#theme").strip(), ""); self.assertEqual(pg.locator("#theme svg").count(), 1)       # icon, no "Theme" text
+        before = pg.get_attribute("#theme", "aria-label"); pg.click("#theme")
+        self.assertNotEqual(pg.get_attribute("#theme", "aria-label"), before); self.assertIn("Switch to", pg.get_attribute("#theme", "title"))
+        pg.click("#theme")
+        pg.click(".tab[data-go=projects]")                                                      # date pills: hover + active state
+        self.assertEqual(pg.get_attribute("[data-range=all]", "aria-pressed"), "true")
+        bg = pg.evaluate("getComputedStyle(document.querySelector('[data-range=\"7\"]')).backgroundColor"); pg.hover("[data-range='7']"); pg.wait_for_timeout(400)
+        self.assertNotEqual(pg.evaluate("getComputedStyle(document.querySelector('[data-range=\"7\"]')).backgroundColor"), bg)
+        pg.click("[data-range='7']"); self.assertEqual(pg.get_attribute("[data-range='7']", "aria-pressed"), "true"); self.assertEqual(pg.get_attribute("[data-range=all]", "aria-pressed"), "false")
+        pg.click("[data-range=all]")
+        pg.click(".tab[data-go=overview]")                                                      # overview refresh picks up changes made outside the page
+        n = int(pg.inner_text(".stat .v").strip()); extra = os.path.join(self.root, "refresh-me"); os.makedirs(extra); self.core.add_project(extra)
+        pg.click("#refresh"); pg.wait_for_function("n=>parseInt(document.querySelector('.stat .v').textContent)===n+1", arg=n)
+        pg.click(".tab[data-go=studio]"); pg.click("#preview"); pg.wait_for_selector("iframe.frame")      # preview opens at the top after scrolling away
+        pg.mouse.move(600, 400); pg.mouse.wheel(0, 3000); pg.wait_for_timeout(300); pg.mouse.wheel(0, -4000); pg.wait_for_timeout(300)
+        pg.click("#preview"); pg.wait_for_timeout(500)
+        top = pg.evaluate("document.querySelector('.frame').closest('.card').getBoundingClientRect().top")
+        self.assertTrue(0 <= top < 260, top); self.assertEqual(pg.evaluate("document.querySelector('.frame').contentWindow.scrollY"), 0)
+        pg.click(".tab[data-go=settings]")                                                      # readable path fields, current data dir + version
+        self.assertGreater(pg.evaluate("document.querySelector('#s_claude').getBoundingClientRect().width"), 380)
+        self.assertEqual(pg.get_attribute("#s_claude", "title"), pg.input_value("#s_claude"))
+        txt = pg.inner_text("#screen"); self.assertIn(self.core._home(), txt); self.assertIn(self.core.VERSION, txt); self.assertNotIn("~/.workreceipt", txt)
+        self.assertEqual(self.errs, []); pg.close()
+
     def test_5_keyboard_shortcuts(self):
         self.core.save_settings({"onboarded": True})
         pg = self.page(); pg.goto(self.url); pg.wait_for_selector(".tab")

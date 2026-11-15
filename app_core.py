@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 import workreceipt as w
 
-VERSION = "0.3.5"
+VERSION = "0.4.0"
 DISPOSITIONS = ("credential", "not_credential", "unsure")     # what the human decided; every choice keeps the value masked in the report
 MAX_ITEMISE = 400_000          # longer texts are reviewed as one group (no per-detection location or reveal)
 REVEAL_MAX = 2000
@@ -211,6 +211,24 @@ def remove_project(path):
     s = load_settings()
     save_settings({"projects": [x for x in s["projects"] if _norm(x) != _norm(path)],
                    "hidden": s["hidden"] + [path]})
+
+
+def resolve_report(name, kind="html"):
+    """Map a file NAME chosen in the UI to the absolute path of a report this app exported. The frontend never supplies a path:
+    only a basename that matches a history record is accepted, and the file must still be a readable regular file."""
+    if kind not in ("html", "pdf") or not isinstance(name, str) or not name or os.path.basename(name) != name:
+        raise UserError("That is not a WorkReceipt report")
+    for rec in reversed(history()):
+        p = rec.get(kind)
+        if p and os.path.basename(p) == name:
+            if os.path.islink(p) or not os.path.exists(p):
+                raise UserError("That report file no longer exists. It may have been moved or deleted")
+            if not os.path.isfile(p):
+                raise UserError("That is not a WorkReceipt report")
+            if not os.access(p, os.R_OK):
+                raise UserError("WorkReceipt does not have permission to open that file. Check its permissions or the folder's access in System Settings > Privacy & Security > Files and Folders")
+            return p
+    raise UserError("That is not a WorkReceipt report")
 
 
 def delete_report(name):
@@ -670,7 +688,7 @@ def export(opts, approved, title_edits, settings=None):
     _add_history({"project": ctx["project"], "repo": os.path.abspath(opts["repo"]), "period": ctx["period"], "html": path, "pdf": pdf,
                   "client": (opts.get("client") or "")[:80], "at": datetime.now().strftime("%Y-%m-%d %H:%M"), "requests": ctx["n_items"], "commits": ctx["n_commits"],
                   "checks": len(ctx["checks"]), "high_reviewed": len(high)})
-    return {"ok": True, "html_path": path, "pdf_path": pdf, "pdf_failed": bool(opts.get("pdf")) and not pdf, "high_reviewed": len(high), "edits_applied": applied,
+    return {"ok": True, "html_path": path, "pdf_path": pdf, "pdf_failed": bool(opts.get("pdf")) and not pdf, "pdf_error": LAST_PDF_ERROR if (opts.get("pdf") and not pdf) else "", "high_reviewed": len(high), "edits_applied": applied,
             "edits_dropped": dropped, "html": html}
 
 
@@ -683,6 +701,7 @@ def chrome_path():
     return None
 
 
+LAST_PDF_ERROR = ""
 PDF_BACKEND = None     # set by the desktop shell: callable(html_str, pdf_path) -> None, raises on failure (WKWebView on macOS)
 
 
@@ -694,12 +713,18 @@ def to_pdf(html_path):
     """PDF of an already-redacted exported HTML file. Packaged app: the native WKWebView backend (no Chrome needed).
     Falls back to an installed Chrome (dev/CLI). Returns the path, or None (the HTML export is never lost)."""
     pdf = html_path[:-5] + ".pdf"
+    global LAST_PDF_ERROR
+    LAST_PDF_ERROR = ""
     if PDF_BACKEND is not None:
         try:
             with open(html_path, encoding="utf-8") as f:
                 PDF_BACKEND(f.read(), pdf)
-        except Exception:
+        except Exception as ex:
             _rm(pdf)
+            # Only text our own backend wrote (stage + system error description) is kept; any other exception is reduced to its type
+            # name, because exception text could in principle contain document content.
+            LAST_PDF_ERROR = (str(ex) if type(ex).__name__ == "PdfError" else type(ex).__name__)[:300]
+            _log_pdf_error(LAST_PDF_ERROR)
             return None
         if os.path.exists(pdf) and os.path.getsize(pdf) > 0:
             return pdf
@@ -717,6 +742,16 @@ def to_pdf(html_path):
     finally:
         shutil.rmtree(prof, ignore_errors=True)
     return pdf if os.path.exists(pdf) else None
+
+
+def _log_pdf_error(reason):
+    """Last PDF failure reason (non-sensitive) in the app data folder, so a user can send it when reporting a problem."""
+    try:
+        os.makedirs(_home(), exist_ok=True)
+        with open(os.path.join(_home(), "pdf-last-error.txt"), "w", encoding="utf-8") as f:
+            f.write(f"{datetime.now().isoformat(timespec='seconds')} {reason}\n")
+    except OSError:
+        pass
 
 
 def _rm(path):

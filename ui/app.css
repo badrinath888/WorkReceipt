@@ -231,3 +231,23 @@ input,textarea,[contenteditable],pre,.mono,.ctx{-webkit-user-select:text;user-se
 .linkbtn{background:none;border:0;color:var(--teal);font-weight:500;padding:0;text-decoration:underline}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 @media (max-width:760px){.shell{grid-template-columns:64px minmax(0,1fr)}.side .tab span,.side .brand span,.side-foot .chip{display:none}.side .tab{justify-content:center;padding:10px}.side .tab .dot{position:absolute;margin:0;transform:translate(10px,-10px)}.side .tab{position:relative}}
+
+/* ---- macOS validation polish ---- */
+.btn[disabled]{pointer-events:auto;cursor:not-allowed}.btn[disabled]:hover{transform:none;border-color:var(--line-2);box-shadow:none}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;border:1px solid var(--line-2);background:var(--surface);color:var(--ink-2);padding:0}
+.iconbtn:hover{color:var(--ink);border-color:var(--ink-2);background:var(--sunken)}
+.pill{cursor:pointer}.pill:hover{background:var(--surface);border-color:var(--teal);color:var(--ink)}
+.pill.on,.pill[aria-pressed=true]{background:var(--teal);border-color:var(--teal);color:#fff;font-weight:500}.pill.on:hover{background:var(--teal-hi);color:#fff}
+.pill:focus-visible,.btn:focus-visible,.iconbtn:focus-visible,.ropt:focus-within{outline:2px solid var(--teal-hi);outline-offset:2px}
+.rgroup{border:1px solid var(--line-2);border-radius:12px;margin:12px 0 0;padding:6px 12px 10px}
+.rgroup legend{font-size:12px;font-weight:600;color:var(--muted);padding:0 6px}
+.ropt{display:flex;gap:10px;align-items:flex-start;padding:8px 6px;border-radius:8px;font-size:13px;cursor:pointer}.ropt:hover{background:var(--sunken)}
+.ropt input{margin-top:3px;accent-color:var(--teal);width:16px;height:16px;flex:none}
+.ack{margin-top:12px;padding:10px 12px;border-radius:12px;border:1px solid var(--amber);background:color-mix(in srgb,var(--amber) 9%,var(--surface))}
+.ack-h{font-size:12px;font-weight:700;letter-spacing:.01em;color:var(--amber);margin-bottom:2px}
+.why-off{margin:10px 2px 0;font-size:12.5px;color:var(--muted)}.why-off[hidden]{display:none}
+.dact.split{justify-content:space-between;margin-top:14px}
+.btn.cancel{background:transparent;border-style:dashed;color:var(--ink-2)}
+.g2s{grid-template-columns:repeat(2,minmax(0,1fr))}@media (max-width:900px){.g2s{grid-template-columns:1fr}}
+input.path{font:12.5px/1.4 var(--mono);text-overflow:ellipsis;min-width:0;width:100%}
+.path-txt{overflow-wrap:anywhere;word-break:break-all}
