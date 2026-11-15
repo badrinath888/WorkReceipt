@@ -1,6 +1,6 @@
 """End-to-end UI test on SYNTHETIC data. Needs playwright + Chrome; skipped otherwise.
 A stub of window.pywebview.api stands in for the macOS webview bridge (the real WKWebView is NOT exercised here)."""
-import os, shutil, subprocess, sys, tempfile, threading, unittest
+import json, os, shutil, subprocess, sys, tempfile, threading, unittest
 from http.server import ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 CHROME = next((c for c in ("/usr/bin/google-chrome", "/usr/bin/chromium") if os.path.exists(c)), None)
@@ -107,6 +107,67 @@ class E2E(unittest.TestCase):
         pg.keyboard.press("Tab"); self.assertTrue(pg.evaluate("document.activeElement !== document.body"))   # keyboard reachable
         self.assertEqual(self.errs, [])
         pg.close()
+
+    # ---- native folder picker bridge (pywebview stub; the real WKWebView is NOT exercised here) ----
+    def desk(self, stub_js, timeout=15000):
+        # The suite pins the Claude folder with an env var so real logs are never read; that override would mask what the
+        # Settings page saves. Pin it in settings.json instead (an empty temp dir) and drop the env override for this test.
+        pin = os.environ.get("WORKRECEIPT_CLAUDE_DIR")
+        if pin:
+            self.core.save_settings({"claude_dir": pin}); os.environ.pop("WORKRECEIPT_CLAUDE_DIR")
+            self.addCleanup(os.environ.__setitem__, "WORKRECEIPT_CLAUDE_DIR", pin)
+        self.core.save_settings({"onboarded": True})
+        pg = self.page(); pg.add_init_script(f"window.WR_BRIDGE_TIMEOUT_MS={timeout};" + stub_js)
+        pg.goto(self.url + "?shell=desktop#settings"); pg.wait_for_selector("[data-choose=s_claude]")
+        return pg
+
+    def saved(self):
+        with open(os.path.join(self.core._home(), "settings.json")) as f:
+            return json.load(f)
+
+    INSTALL = "window.__install=()=>{window.pywebview={api:{pick_folder:%s,reveal:async()=>true,open_report:async()=>true,ping:async()=>true}};window.dispatchEvent(new Event('pywebviewready'));};"
+
+    def test_6_picker_waits_for_bridge_then_populates_and_persists(self):
+        d1, d2 = os.path.join(self.root, "claude-picked"), os.path.join(self.root, "reports-picked"); os.makedirs(d1); os.makedirs(d2)
+        picks = [d1, d2]
+        pg = self.desk(self.INSTALL % ("async()=>window.__picks.shift()"))
+        pg.evaluate("p=>window.__picks=p", picks)
+        self.assertTrue(pg.is_disabled("[data-choose=s_claude]")); self.assertTrue(pg.is_disabled("[data-choose=s_out]"))   # not usable before the bridge exists
+        pg.evaluate("window.__install()")
+        pg.wait_for_function("!document.querySelector('[data-choose=s_claude]').disabled")
+        pg.click("[data-choose=s_claude]"); pg.wait_for_function("p=>document.querySelector('#s_claude').value===p", arg=d1)
+        pg.click("[data-choose=s_out]"); pg.wait_for_function("p=>document.querySelector('#s_out').value===p", arg=d2)
+        self.assertEqual((self.saved()["claude_dir"], self.saved()["out_dir"]), (d1, d2))       # persisted, in the right fields
+        pg.reload(); pg.wait_for_selector("#s_claude"); self.assertEqual(pg.input_value("#s_claude"), d1)
+        self.assertEqual(self.errs, []); pg.close()
+
+    def test_7_cancel_changes_nothing_and_failure_shows_error(self):
+        before = dict(self.saved()) if os.path.exists(os.path.join(self.core._home(), "settings.json")) else {}
+        pg = self.desk(self.INSTALL % "async()=>null"); pg.evaluate("window.__install()")
+        pg.wait_for_function("!document.querySelector('[data-choose=s_claude]').disabled")
+        old = pg.input_value("#s_claude"); pg.click("[data-choose=s_claude]"); pg.wait_for_timeout(300)
+        self.assertEqual(pg.input_value("#s_claude"), old); self.assertNotIn("could not be opened", pg.inner_text("#toast"))
+        pg.close()
+        pg = self.desk(self.INSTALL % "async()=>{throw new Error('no window')}"); pg.evaluate("window.__install()")
+        pg.wait_for_function("!document.querySelector('[data-choose=s_claude]').disabled")
+        pg.click("[data-choose=s_claude]"); pg.wait_for_selector("#toast.on:has-text('could not be opened')")
+        self.assertEqual(pg.input_value("#s_claude"), old); pg.close()
+
+    def test_8_bridge_never_arrives_is_a_clear_error_not_a_dead_button(self):
+        pg = self.desk("", timeout=1200)
+        pg.wait_for_selector(".callout.err:has-text('Native folder dialog unavailable')", timeout=5000)
+        self.assertTrue(pg.is_disabled("[data-choose=s_claude]")); self.assertIn("not available", pg.get_attribute("[data-choose=s_claude]", "title"))
+        pg.fill("#s_claude", self.root); pg.click("#savesettings"); pg.wait_for_selector("#toast.on:has-text('Settings saved')")   # typing a path still works
+        self.assertEqual(self.saved()["claude_dir"], self.root); pg.close()
+
+    def test_9_add_project_uses_native_picker_and_waits_for_bridge(self):
+        extra = os.path.join(self.root, "picked-proj"); os.makedirs(extra)
+        self.core.save_settings({"onboarded": True})
+        pg = self.page(); pg.add_init_script(self.INSTALL % ("async()=>%r" % extra))
+        pg.goto(self.url + "?shell=desktop#projects"); pg.wait_for_selector("#addproj")
+        self.assertTrue(pg.is_disabled("#addproj"))
+        pg.evaluate("window.__install()"); pg.wait_for_function("!document.querySelector('#addproj').disabled")
+        pg.click("#addproj"); pg.wait_for_selector("tr[data-pick]:has-text('picked-proj')"); self.assertEqual(self.errs, []); pg.close()
 
     def test_5_keyboard_shortcuts(self):
         self.core.save_settings({"onboarded": True})

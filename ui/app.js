@@ -23,11 +23,35 @@ async function api(path, body) {
   if (!r.ok && r.status !== 409) throw new Error(j.error || `Request failed (${r.status})`);
   return Object.assign(j, { _status: r.status });
 }
-const native = () => (window.pywebview && window.pywebview.api) || null;
-async function pickFolder() {                      // native macOS dialog in the app; typed path is the browser fallback
-  const n = native();
-  if (n && n.pick_folder) { try { return (await n.pick_folder()) || null; } catch (e) { toast("Could not open the folder dialog"); return null; } }
-  return null;
+/* ---- native bridge (pywebview) ----
+   pywebview creates window.pywebview.api AFTER the page loads and fires "pywebviewready". In the desktop app (?shell=desktop) the
+   picker buttons stay disabled until the bridge answers; if it never does, a clear error is shown instead of a dead button. */
+const DESKTOP = new URLSearchParams(location.search).get("shell") === "desktop";
+const B = { state: DESKTOP ? "wait" : "none" };
+const native = () => { const a = window.pywebview && window.pywebview.api; return a && typeof a.pick_folder === "function" ? a : null; };
+const BRIDGE_DOWN = "The native folder dialog is not available. Quit and reopen WorkReceipt; if this continues, type the folder path instead.";
+function syncPickers() {
+  const off = DESKTOP && B.state !== "ready";
+  document.querySelectorAll("[data-choose],#addproj,#obpick").forEach(b => { b.disabled = off; b.title = off ? (B.state === "failed" ? BRIDGE_DOWN : "Starting up…") : ""; });
+}
+function bridgeCheck() {
+  if (!native()) return false;
+  if (B.state !== "ready") { B.state = "ready"; cache.screen = null; render(); syncPickers(); }
+  return true;
+}
+if (DESKTOP) {
+  addEventListener("pywebviewready", bridgeCheck);
+  const t0 = Date.now(), iv = setInterval(() => {
+    if (bridgeCheck()) clearInterval(iv);
+    else if (Date.now() - t0 > (window.WR_BRIDGE_TIMEOUT_MS || 15000)) { clearInterval(iv); B.state = "failed"; cache.screen = null; render(); syncPickers(); toast(BRIDGE_DOWN); }
+  }, 100);
+}
+async function pickFolder(start) {                 // -> path | null.  pickFolder.failed is true when null means "error", not "cancelled"
+  pickFolder.failed = false;
+  if (DESKTOP && B.state !== "ready") { pickFolder.failed = true; toast(B.state === "failed" ? BRIDGE_DOWN : "WorkReceipt is still starting. Try again in a moment."); return null; }
+  const n = native(); if (!n) return null;
+  try { return (await n.pick_folder(start || null)) || null; }
+  catch (e) { pickFolder.failed = true; toast("The folder dialog could not be opened" + (e && e.message ? ": " + e.message : ".")); return null; }
 }
 async function openFile(path, name) {
   const n = native();
@@ -41,7 +65,7 @@ async function revealFile(path) {
 }
 async function addProjectFlow(typed) {
   let path = typed || await pickFolder();
-  if (!path) { if (!native()) { go("projects"); setTimeout(() => $("#repo")?.focus(), 50); toast("Type or paste a folder path, then press Use this folder"); } return null; }
+  if (!path) { if (!DESKTOP && !native()) { go("projects"); setTimeout(() => $("#repo")?.focus(), 50); toast("Type or paste a folder path, then press Use this folder"); } return null; }
   try { const r = await api("/api/project/add", { path }); await loadState(); pick(r.path); toast("Project added"); return r.path; }
   catch (e) { toast(e.message); return null; }
 }
@@ -216,6 +240,7 @@ function vPrivacy() {
 function vSettings() {
   const s = S.data.settings;
   return `<div><div class="ph"><div><h2>Settings</h2><p>Local directories, appearance and report defaults.</p></div><div class="act"><button class="btn dark" id="savesettings">Save settings</button></div></div>
+  ${DESKTOP && B.state === "failed" ? `<div class="callout err"><div><b>Native folder dialog unavailable.</b> ${BRIDGE_DOWN}</div></div>` : ""}
   <div class="grid g3f"><div class="card"><h3>Local directories</h3><div class="grid"><label class="field">Claude Code folder<span class="inrow"><input id="s_claude" value="${esc(s.claude_dir)}" spellcheck="false"><button type="button" class="btn sm" data-choose="s_claude">Choose…</button></span><small>${S.data.claude_dir_ok ? "projects folder found" : "no projects folder at this location"}</small></label>
     <label class="field">Default reports folder<span class="inrow"><input id="s_out" value="${esc(s.out_dir)}" spellcheck="false"><button type="button" class="btn sm" data-choose="s_out">Choose…</button></span><small>Created on first export</small></label></div></div>
   <div class="card"><h3>Appearance</h3><div class="seg" id="s_theme">${["system", "light", "dark"].map(t => `<button data-theme="${t}" class="${s.theme === t ? "on" : ""}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}</div></div>
@@ -251,7 +276,7 @@ function obHTML() {
   return `<div class="ovl ob" role="dialog" aria-modal="true" aria-label="Welcome"><div class="dlgbox"><div class="steps" aria-hidden="true">${OB.map((_, i) => `<i class="${i <= o.step ? "on" : ""}"></i>`).join("")}</div><h3>${h}</h3><p class="note" style="font-size:14px;margin:8px 0 14px">${p}</p>${body}
   <div class="dact">${o.step > 0 ? '<button class="btn" id="obback">Back</button>' : ""}${o.step < 2 ? '<button class="btn dark" id="obnext">Continue</button>' : '<button class="btn" id="obskip">Finish setup</button>'}</div></div></div>`;
 }
-function showOb() { const r = $("#obroot"); r.innerHTML = obHTML(); r.querySelector("button.dark,button.teal,button")?.focus(); }
+function showOb() { const r = $("#obroot"); r.innerHTML = obHTML(); syncPickers(); r.querySelector("button.dark,button.teal,button")?.focus(); }
 async function finishOb(go_) {
   S.ob = null; showOb();
   try { S.data.settings = await api("/api/settings", { onboarded: true }); } catch (e) { toast(e.message); }
@@ -263,7 +288,7 @@ function render() {
   if (!S.data) return;
   renderChrome();
   setHTML($("#screen"), (VIEWS[S.tab] || vOverview)());   // unchanged screen keeps its DOM (focus, preview, edits)
-  fitFrame();
+  fitFrame(); syncPickers();
 }
 function fitFrame() {
   const f = $(".frame"); if (!f) return;
@@ -297,6 +322,13 @@ async function doExport() {
   } catch (e) { toast(e.message); }
   S.exporting = false; render();
 }
+async function saveSettings(msg) {                  // persists every Settings field; used by Save and by each "Choose…" pick
+  try {
+    S.data.settings = await api("/api/settings", { claude_dir: $("#s_claude").value.trim(), out_dir: $("#s_out").value.trim(), author: $("#s_author").value.trim(), client: $("#s_client").value.trim(),
+      theme: S.data.settings.theme, redact_terms: $("#s_terms").value.split("\n") });
+    await loadState(); if (!S.author) S.author = S.data.settings.author; if (!S.client) S.client = S.data.settings.client; cache.screen = null; render(); toast(msg);
+  } catch (er) { toast(er.message); }
+}
 function setRange(k) {
   const now = new Date();
   if (k === "all") { S.since = ""; S.until = ""; } else if (k === "month") { S.since = iso(new Date(now.getFullYear(), now.getMonth(), 1)); S.until = iso(now); }
@@ -312,7 +344,7 @@ document.addEventListener("click", async e => {
   if (t.dataset.showfile) return revealFile(t.dataset.showfile);
   if (t.dataset.delrep) { S.dlg = { kind: "delrep", name: t.dataset.delrep }; return showDlg(); }
   if (t.dataset.rmproj) { S.dlg = { kind: "rmproj", path: t.dataset.rmproj }; return showDlg(); }
-  if (t.dataset.choose) { const v = await pickFolder(); if (v) $("#" + t.dataset.choose).value = v; else if (!native()) toast("Type or paste the folder path"); return; }
+  if (t.dataset.choose) { const v = await pickFolder(); if (v) { $("#" + t.dataset.choose).value = v; await saveSettings("Folder saved"); } else if (!DESKTOP && !native()) toast("Type or paste the folder path"); return; }
   if (t.dataset.toggle) { const id = t.dataset.toggle; S.open.has(id) ? S.open.delete(id) : S.open.add(id); return render(); }
   if (t.dataset.close) return closeDlg();
   if (t.dataset.reveal) return doReveal(t.dataset.reveal);
@@ -331,7 +363,7 @@ document.addEventListener("click", async e => {
     case "obnext": S.ob.step++; showOb(); break;
     case "obback": S.ob.step--; showOb(); break;
     case "obskip": await finishOb("overview"); break;
-    case "obpick": { const path = await pickFolder(); if (!path) { S.ob.err = native() ? "" : "Folder dialog is only available in the desktop app. Skip, then use Add project."; showOb(); break; }
+    case "obpick": { const path = await pickFolder(); if (!path) { S.ob.err = pickFolder.failed ? BRIDGE_DOWN : native() || DESKTOP ? "" : "Folder dialog is only available in the desktop app. Skip, then use Add project."; showOb(); break; }
       try { const r = await api("/api/project/add", { path }); await loadState(); pick(r.path); await finishOb("projects"); } catch (er) { S.ob.err = er.message; showOb(); } break; }
     case "obdemo": { S.ob.busy = true; S.ob.err = ""; showOb(); try { await api("/api/demo", {}); await loadState(); const d = S.data.projects.find(x => x.demo); if (d) pick(d.path); await finishOb("projects"); } catch (er) { S.ob.busy = false; S.ob.err = er.message; showOb(); } break; }
     case "confirmdel": { const g = S.dlg; closeDlg(); try { if (g.kind === "delrep") await api("/api/report/delete", { name: g.name, confirm: true }); else { await api("/api/project/remove", { path: g.path }); if (S.repo === g.path) { S.repo = ""; S.prev = null; S.html = null; } } await loadState(); render(); toast(g.kind === "delrep" ? "Report deleted" : "Project removed from WorkReceipt"); } catch (er) { toast(er.message); } break; }
@@ -342,13 +374,7 @@ document.addEventListener("click", async e => {
     case "togglecleared": S.showCleared = !S.showCleared; render(); break;
     case "confirmrev": { const g = S.dlg; if (g?.pick && g.ack) { S.disp[g.id] = g.pick; closeDlg(); render(); toast("Review recorded"); } break; }
     case "addterm": { const v = $("#term").value.trim(); if (v) { S.terms.push(v); await rescan(); } break; }
-    case "savesettings": {
-      try {
-        S.data.settings = await api("/api/settings", { claude_dir: $("#s_claude").value.trim(), out_dir: $("#s_out").value.trim(), author: $("#s_author").value.trim(), client: $("#s_client").value.trim(),
-          theme: S.data.settings.theme, redact_terms: $("#s_terms").value.split("\n") });
-        await loadState(); if (!S.author) S.author = S.data.settings.author; if (!S.client) S.client = S.data.settings.client; render(); toast("Settings saved");
-      } catch (er) { toast(er.message); }
-    }
+    case "savesettings": await saveSettings("Settings saved"); break;
   }
 });
 document.addEventListener("change", e => {

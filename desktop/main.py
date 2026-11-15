@@ -23,13 +23,23 @@ def stop_server(srv):
 
 
 class Api:
-    """Exposed to the page as window.pywebview.api. Paths only; never file contents."""
-    window = None
+    """Exposed to the page as window.pywebview.api. Paths only; never file contents.
 
-    def pick_folder(self):
+    pywebview walks every PUBLIC attribute of this object and recurses into non-callable ones (webview/util.py get_functions).
+    Holding the Window as a public attribute therefore made it traverse the whole window/Cocoa object graph while building the
+    bridge, so window.pywebview.api never appeared in the packaged app. Keep every non-method attribute underscore-prefixed."""
+    _window = None
+
+    def ping(self):
+        return True
+
+    def pick_folder(self, start=None):
+        """Native folder dialog. Returns the chosen path, or None if the user cancelled. Raises if the dialog cannot be shown."""
         import webview
-        r = self.window.create_file_dialog(webview.FOLDER_DIALOG)
-        return r[0] if r else None
+        kind = getattr(getattr(webview, "FileDialog", None), "FOLDER", None) or webview.FOLDER_DIALOG
+        d = start if isinstance(start, str) and os.path.isdir(start) else ""
+        r = self._window.create_file_dialog(kind, directory=d)
+        return str(r[0]) if r else None
 
     def reveal(self, path):
         # Only reveal files this app exported.
@@ -72,8 +82,8 @@ def main():
     srv, url = start_server()
     atexit.register(lambda: stop_server(srv))
     api = Api()
-    win = webview.create_window("WorkReceipt", url, js_api=api, width=1180, height=760, min_size=MIN_SIZE)
-    api.window = win
+    win = webview.create_window("WorkReceipt", url + "?shell=desktop", js_api=api, width=1180, height=760, min_size=MIN_SIZE)
+    api._window = win
     win.events.closed += lambda: stop_server(srv)
     try:
         webview.start(menu=build_menu(win))
