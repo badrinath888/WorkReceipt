@@ -124,6 +124,7 @@ function vOverview() {
   const noDir = !d.claude_dir_ok && !ps.length;
   return `<div><div class="ph"><div><h2>Overview <span class="chip">${today()}</span></h2><p>Your projects, recent Claude Code activity and exported reports.</p></div>
     <div class="act"><button class="btn" id="addproj">${ic("plus")} Add project</button><button class="btn dark" id="genreport">${ic("doc")} Generate report</button><button class="btn" id="openrecent" ${hist.length ? "" : "disabled"}>Open recent report</button></div></div>
+  ${d.git_ok === false ? `<div class="callout err"><div><b>Git is not installed.</b> WorkReceipt needs Git to read commit history. On a Mac, run <span class="mono">xcode-select --install</span> once in Terminal, then reopen WorkReceipt.</div></div>` : ""}
   ${noDir ? `<div class="callout err"><div><b>Claude Code folder not found.</b> No <span class="mono">projects</span> folder at <span class="mono">${esc(d.settings.claude_dir)}</span>. Set the correct location in Settings.</div></div>` : ""}
   <div class="grid g4">
     <div class="card stat"><div class="k">Projects ${ic("folder", 13)}</div><div class="v">${ps.length}</div><div class="d">${ps.filter(p => p.git).length} with Git history</div></div>
@@ -172,7 +173,7 @@ function vStudio() {
   return `<div><div class="ph"><div><h2>Report Studio <span class="chip">${esc(P.project)}</span></h2><p>${esc(P.period)} · Git is the evidence of delivered changes; requests are not proof of completion.</p></div>
     <div class="act"><button class="btn" id="preview">${S.html ? "Refresh preview" : "Preview"}</button><button class="btn dark" id="export" ${S.exporting ? "disabled" : ""}>${ic("dl")} Export report</button></div></div>
   ${pend ? `<div class="callout"><div><b>${pend} high-severity masked value${pend > 1 ? "s" : ""} not reviewed yet.</b> Export unlocks after you review each one in the <a href="#privacy" data-go="privacy" style="color:var(--teal);font-weight:500">Privacy Center</a>.</div></div>` : ""}
-  ${S.lastExport ? `<div class="callout ok"><div><b>Exported.</b> Saved to <span class="mono">${esc(S.lastExport.html_path)}</span>${S.lastExport.pdf_path ? ` and <span class="mono">${esc(S.lastExport.pdf_path)}</span>` : ""}. <button class="linkbtn" data-open="${esc(S.lastExport.html_path)}">Open report</button></div></div>` : ""}
+  ${S.lastExport ? `<div class="callout ok"><div><b>Exported.</b> Saved to <span class="mono">${esc(S.lastExport.html_path)}</span>${S.lastExport.pdf_path ? ` and <span class="mono">${esc(S.lastExport.pdf_path)}</span>` : ""}.${S.lastExport.pdf_failed ? " <b>The PDF could not be created</b>; the HTML file was saved." : ""} <button class="linkbtn" data-open="${esc(S.lastExport.html_path)}">Open report</button></div></div>` : ""}
   <div class="grid g4">
     <div class="card stat"><div class="k">Work requests</div><div class="v">${P.requests.length}</div><div class="d">${nTitles ? nTitles + " edited" : "from session logs"}</div></div>
     <div class="card stat"><div class="k">Commits ${ic("git", 13)}</div><div class="v">${P.n_commits}</div><div class="d">${P.authors} author(s)</div></div>
@@ -185,7 +186,7 @@ function vStudio() {
     <div class="card"><h3>Verification</h3>${P.n_checks ? `<div class="pill-row"><span class="badge ok">${cs.ok} no error reported</span><span class="badge bad">${cs.failed} failed</span><span class="badge">${cs.unknown} no result</span></div>
       <p class="note" style="margin:8px 0">${cs.superseded} re-run later · ${cs.edited} followed by edits and not re-run · ${cs.possible} possibly affected · ${cs.current} no later change.</p>
       <div class="list">${P.checks.slice(-5).reverse().map(c => `<div class="row"><div class="grow"><div class="t mono" title="${esc(c.cmd)}">${esc(c.cmd.slice(0, 70))}</div><div class="s">${esc(c.date)}${c.state === "edited" ? " · edited after, not re-run" : c.state === "superseded" ? " · re-run later" : ""}</div></div><span class="badge ${c.ok === true ? "ok" : c.ok === false ? "bad" : ""}">${c.ok === true ? "no error" : c.ok === false ? "failed" : "no result"}</span></div>`).join("")}</div>` : `<div class="empty" style="padding:14px"><b>No checks recorded</b>Test, lint or build commands appear here.</div>`}</div></div></div>
-  <div class="card sec"><h3>Report preview <span class="chip">masked</span></h3>${S.html ? `<iframe class="frame" sandbox="allow-same-origin" title="Report preview" srcdoc="${esc(S.html)}"></iframe><p class="note" style="margin-top:8px">${S.data.chrome ? "Export also creates a PDF." : "PDF needs Google Chrome in this build; the HTML export always works and can be printed to PDF."}</p>` : `<div class="empty"><b>Preview not generated</b>Preview shows exactly what will be exported, after masking.<br><button class="btn" id="preview2">Generate preview</button></div>`}</div></div>`;
+  <div class="card sec"><h3>Report preview <span class="chip">masked</span></h3>${S.html ? `<iframe class="frame" sandbox="allow-same-origin" title="Report preview" srcdoc="${esc(S.html)}"></iframe><p class="note" style="margin-top:8px">${S.data.chrome ? "Export also creates a PDF." : "PDF export is not available here; the HTML export always works and can be printed to PDF."}</p>` : `<div class="empty"><b>Preview not generated</b>Preview shows exactly what will be exported, after masking.<br><button class="btn" id="preview2">Generate preview</button></div>`}</div></div>`;
 }
 
 /* ---------- Privacy Center ---------- */
@@ -223,7 +224,7 @@ function vSettings() {
   <div class="card sec"><h3>About this app</h3><div class="grid gform"><div class="note"><b>Version</b><br>WorkReceipt ${esc(S.data.version)}</div><div class="note"><b>Engine</b><br>Python report engine (stdlib only)</div><div class="note"><b>Server</b><br>${esc(location.host)} — this computer only</div><div class="note"><b>Data</b><br>Settings and report history: <span class="mono">~/.workreceipt</span></div></div></div>
   <div class="card sec"><h3>Privacy &amp; storage</h3><p class="note">Everything runs on this computer. No account, no telemetry, no uploads, no AI service. Detected secrets are never stored: settings and report history hold only project names, dates, counts and file paths. Local data: <span class="mono">${esc(S.data.home)}</span>. Reports are saved to your reports folder.</p></div>
   <div class="card sec"><h3>Updates</h3><p class="note">Manual updates: download the newest WorkReceipt from its release page, open the disk image and drag the app to Applications, replacing the old one. Your settings and reports are kept. This app does not check for updates automatically.</p></div>
-  <div class="card sec"><h3>PDF export</h3><p class="note">${S.data.chrome ? "Chrome was found on this computer; “Export report” can also create a PDF." : "Chrome was not found. Open the exported HTML and use your browser’s Print → Save as PDF."}</p></div></div>`;
+  <div class="card sec"><h3>PDF export</h3><p class="note">${S.data.chrome ? "“Export report” creates an HTML file and a PDF. The PDF is made from the already-masked HTML, on this computer." : "PDF export is not available in this environment. Open the exported HTML and use Print → Save as PDF."}</p></div></div>`;
 }
 
 /* ---------- Reports library ---------- */
@@ -361,7 +362,21 @@ document.addEventListener("input", e => {
   const r = e.target.dataset?.req;
   if (r != null) { const orig = S.prev.requests.find(q => q.key === r)?.title, v = e.target.textContent.trim(); if (v && v !== orig) S.titles[r] = v; else delete S.titles[r]; S.html = null; e.target.closest(".req").classList.toggle("edited", r in S.titles); }
 });
-document.addEventListener("keydown", e => { if (e.key === "Escape" && S.dlg) closeDlg(); if (e.target.id === "term" && e.key === "Enter") $("#addterm").click(); if (e.target.id === "repo" && e.key === "Enter") $("#usepath").click(); });
+/* Commands shared by keyboard shortcuts and the native menu bar (menu items call window.wrCommand). */
+window.wrCommand = async c => {
+  if (!S.data) return;
+  if (c.startsWith("go:")) return go(c.slice(3));
+  if (c === "add") return addProjectFlow();
+  if (c === "refresh") { await loadState(); render(); return toast("Project list refreshed"); }
+  if (c === "export") { if (!S.prev) { go("projects"); return toast("Load a project's activity first"); } go("studio"); return doExport(); }
+  if (c === "preview") { if (!S.prev) return toast("Load a project's activity first"); go("studio"); return makePreview(); }
+};
+document.addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && !S.ob) {
+    const nav = { 1: "overview", 2: "projects", 3: "studio", 4: "privacy", 5: "reports", ",": "settings" }[e.key];
+    const cmd = nav ? "go:" + nav : { o: "add", r: "refresh", e: "export", p: "preview" }[e.key];
+    if (cmd && !(e.key === "r" && e.ctrlKey && !e.metaKey)) { e.preventDefault(); window.wrCommand(cmd); return; }
+  } if (e.key === "Escape" && S.dlg) closeDlg(); if (e.target.id === "term" && e.key === "Enter") $("#addterm").click(); if (e.target.id === "repo" && e.key === "Enter") $("#usepath").click(); });
 function syncForm() { for (const [id, k] of [["since", "since"], ["until", "until"], ["gitauthor", "gitAuthor"], ["client", "client"], ["repo", "repo"]]) { const el = $("#" + id); if (el && id !== "repo") S[k] = el.value.trim(); } }
 document.addEventListener("focusout", e => { if (["since", "until", "gitauthor", "client"].includes(e.target.id)) syncForm(); });
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyTheme);

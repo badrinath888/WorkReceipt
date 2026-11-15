@@ -20,15 +20,29 @@ class NotFound(LookupError):
     pass
 
 
-HOME_DIR = os.path.join(os.path.expanduser("~"), ".workreceipt")
+LEGACY_HOME = os.path.join(os.path.expanduser("~"), ".workreceipt")
+if sys.platform == "darwin":       # standard macOS locations; nothing is ever written inside the .app bundle
+    HOME_DIR = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "WorkReceipt")
+    DEFAULT_OUT = os.path.join(os.path.expanduser("~"), "Documents", "WorkReceipt Reports")
+else:
+    HOME_DIR = LEGACY_HOME
+    DEFAULT_OUT = os.path.join(os.path.expanduser("~"), "WorkReceipt Reports")
 DEFAULTS = {"claude_dir": os.environ.get("WORKRECEIPT_CLAUDE_DIR", os.path.expanduser("~/.claude")),
-            "out_dir": os.path.join(os.path.expanduser("~"), "WorkReceipt Reports"),
+            "out_dir": DEFAULT_OUT,
             "author": "", "client": "", "theme": "system", "redact_terms": [],
             "projects": [], "hidden": [], "onboarded": False, "demo": False}
 
 
 def _home():
-    return os.environ.get("WORKRECEIPT_HOME", HOME_DIR)
+    h = os.environ.get("WORKRECEIPT_HOME")
+    if h:
+        return h
+    if HOME_DIR != LEGACY_HOME and not os.path.isdir(HOME_DIR) and os.path.isdir(LEGACY_HOME):
+        try:                                   # one-time copy of settings/history from the pre-desktop location
+            shutil.copytree(LEGACY_HOME, HOME_DIR, ignore=shutil.ignore_patterns("demo"))
+        except OSError:
+            pass
+    return HOME_DIR
 
 
 def load_settings():
@@ -183,7 +197,9 @@ def add_project(path):
         raise UserError("Choose a folder using the folder picker or an absolute path")
     path = os.path.abspath(os.path.expanduser(path))
     if not os.path.isdir(path):
-        raise UserError("That folder does not exist or cannot be read")
+        raise UserError("That folder does not exist or was moved or deleted")
+    if not readable_dir(path):
+        raise UserError("WorkReceipt does not have permission to read that folder. In System Settings > Privacy & Security > Files and Folders, allow WorkReceipt, then try again")
     s = load_settings()
     save_settings({"projects": [x for x in s["projects"] if _norm(x) != _norm(path)] + [path],
                    "hidden": [x for x in s["hidden"] if _norm(x) != _norm(path)]})
@@ -514,7 +530,11 @@ def build(opts, settings=None):
     s = settings or load_settings()
     repo = os.path.abspath(opts.get("repo") or "")
     if not os.path.isdir(repo):
-        raise UserError("Project folder not found")
+        raise UserError("Project folder not found. It may have been moved or deleted; remove it from Projects or add its new location")
+    if not readable_dir(repo):
+        raise UserError("WorkReceipt does not have permission to read this project folder. Allow access in System Settings > Privacy & Security > Files and Folders")
+    if not git_ok():
+        raise UserError("Git is not available. On a Mac, install the Command Line Tools (open Terminal once and run: xcode-select --install), then try again")
     since, until = _dates(opts.get("since") or "", opts.get("until") or "")
     terms = _terms(s, opts)
     skipped = Counter()
@@ -643,14 +663,14 @@ def export(opts, approved, title_edits, settings=None):
         with open(path, "x", encoding="utf-8") as f:
             f.write(html)
     except OSError as ex:
-        raise UserError(f"Cannot write to the reports folder ({s['out_dir']}): {ex.strerror or 'error'}")
+        raise UserError(f"Cannot save to the reports folder ({s['out_dir']}): {ex.strerror or 'error'}. Choose another folder in Settings")
     pdf = None
     if opts.get("pdf"):
         pdf = to_pdf(path)
     _add_history({"project": ctx["project"], "repo": os.path.abspath(opts["repo"]), "period": ctx["period"], "html": path, "pdf": pdf,
                   "client": (opts.get("client") or "")[:80], "at": datetime.now().strftime("%Y-%m-%d %H:%M"), "requests": ctx["n_items"], "commits": ctx["n_commits"],
                   "checks": len(ctx["checks"]), "high_reviewed": len(high)})
-    return {"ok": True, "html_path": path, "pdf_path": pdf, "high_reviewed": len(high), "edits_applied": applied,
+    return {"ok": True, "html_path": path, "pdf_path": pdf, "pdf_failed": bool(opts.get("pdf")) and not pdf, "high_reviewed": len(high), "edits_applied": applied,
             "edits_dropped": dropped, "html": html}
 
 
@@ -663,11 +683,31 @@ def chrome_path():
     return None
 
 
+PDF_BACKEND = None     # set by the desktop shell: callable(html_str, pdf_path) -> None, raises on failure (WKWebView on macOS)
+
+
+def pdf_available():
+    return PDF_BACKEND is not None or chrome_path() is not None
+
+
 def to_pdf(html_path):
+    """PDF of an already-redacted exported HTML file. Packaged app: the native WKWebView backend (no Chrome needed).
+    Falls back to an installed Chrome (dev/CLI). Returns the path, or None (the HTML export is never lost)."""
+    pdf = html_path[:-5] + ".pdf"
+    if PDF_BACKEND is not None:
+        try:
+            with open(html_path, encoding="utf-8") as f:
+                PDF_BACKEND(f.read(), pdf)
+        except Exception:
+            _rm(pdf)
+            return None
+        if os.path.exists(pdf) and os.path.getsize(pdf) > 0:
+            return pdf
+        _rm(pdf)
+        return None
     chrome = chrome_path()
     if not chrome:
         return None
-    pdf = html_path[:-5] + ".pdf"
     prof = tempfile.mkdtemp(prefix="wr-chrome-")
     try:
         subprocess.run([chrome, "--headless=new", "--disable-gpu", "--no-sandbox", f"--user-data-dir={prof}", "--no-pdf-header-footer",
@@ -677,3 +717,21 @@ def to_pdf(html_path):
     finally:
         shutil.rmtree(prof, ignore_errors=True)
     return pdf if os.path.exists(pdf) else None
+
+
+def _rm(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def git_ok():
+    try:
+        return subprocess.run(["git", "--version"], capture_output=True, timeout=10).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def readable_dir(path):
+    return os.path.isdir(path) and os.access(path, os.R_OK | os.X_OK)

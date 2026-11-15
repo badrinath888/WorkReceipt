@@ -79,7 +79,7 @@ class H(BaseHTTPRequestHandler):
         for p in projects:
             p.pop("mtimes", None)
         self._json(200, {"settings": s, "projects": projects, "weekly": wk, "history": core.history()[::-1],
-                         "version": core.VERSION, "home": core._home(), "chrome": bool(core.chrome_path()), "claude_dir_ok": os.path.isdir(os.path.join(s["claude_dir"], "projects"))})
+                         "version": core.VERSION, "home": core._home(), "chrome": core.pdf_available(), "git_ok": core.git_ok(), "claude_dir_ok": os.path.isdir(os.path.join(s["claude_dir"], "projects"))})
 
     def do_POST(self):
         if not self._host_ok() or self.headers.get("X-WR-Token") != TOKEN:

@@ -288,7 +288,7 @@ class Export(unittest.TestCase):
         blocker = os.path.join(ws.root, "file"); open(blocker, "w").write("x")
         core.save_settings({"out_dir": os.path.join(blocker, "sub")})
         with self.assertRaises(ValueError) as cm: core.export({"repo": ws.repo}, [], {})
-        self.assertIn("Cannot write", str(cm.exception))
+        self.assertIn("Cannot save", str(cm.exception))
 
     def test_exports_in_the_same_second_never_overwrite(self):
         ws = WS(); self.addCleanup(ws.done)

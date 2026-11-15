@@ -108,6 +108,13 @@ class E2E(unittest.TestCase):
         self.assertEqual(self.errs, [])
         pg.close()
 
+    def test_5_keyboard_shortcuts(self):
+        self.core.save_settings({"onboarded": True})
+        pg = self.page(); pg.goto(self.url); pg.wait_for_selector(".tab")
+        for key, h in (("2", "Projects"), ("5", "Reports"), (",", "Settings"), ("1", "Overview"), ("3", "Report Studio"), ("4", "Privacy Center")):
+            pg.keyboard.press("Control+" + key); self.assertIn(h, pg.inner_text("#screen .ph h2"))
+        self.assertEqual(self.errs, []); pg.close()
+
     def test_4_missing_claude_dir_and_empty_state(self):
         pg = self.page(); pg.goto(self.url + "#reports"); pg.wait_for_selector("#screen .ph")
         self.assertIn("Reports", pg.inner_text("#screen")); pg.close()

@@ -1,0 +1,3 @@
+# Build-time only. Pin exact versions you have validated on your Mac (pip freeze > this file after the first good build).
+pywebview>=5.3,<6
+pyinstaller>=6.10,<7
