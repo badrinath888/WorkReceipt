@@ -40,6 +40,14 @@ class Api:
         return False
 
 
+    def open_report(self, path):
+        known = {p for rec in core.history() for p in (rec.get("html"), rec.get("pdf")) if p}
+        if path in known and os.path.exists(path) and sys.platform == "darwin":
+            subprocess.run(["open", path], check=False)
+            return True
+        return False
+
+
 def main():
     import webview
     srv, url = start_server()

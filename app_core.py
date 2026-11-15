@@ -1,6 +1,6 @@
 """WorkReceipt app core: thin layer over the v0.2.4 engine (workreceipt.py). No engine logic is changed here.
 Everything runs locally; nothing is sent over the network."""
-import hashlib, hmac, json, os, pathlib, re, secrets, shutil, subprocess, tempfile, time
+import hashlib, hmac, json, os, pathlib, re, secrets, shutil, subprocess, sys, tempfile, time
 from collections import Counter
 from datetime import datetime, timedelta
 
@@ -23,7 +23,8 @@ class NotFound(LookupError):
 HOME_DIR = os.path.join(os.path.expanduser("~"), ".workreceipt")
 DEFAULTS = {"claude_dir": os.environ.get("WORKRECEIPT_CLAUDE_DIR", os.path.expanduser("~/.claude")),
             "out_dir": os.path.join(os.path.expanduser("~"), "WorkReceipt Reports"),
-            "author": "", "client": "", "theme": "system", "redact_terms": []}
+            "author": "", "client": "", "theme": "system", "redact_terms": [],
+            "projects": [], "hidden": [], "onboarded": False, "demo": False}
 
 
 def _home():
@@ -48,6 +49,9 @@ def save_settings(new):
         if k in new:
             s[k] = new[k]
     s["redact_terms"] = [t.strip() for t in s["redact_terms"] if str(t).strip()][:50]
+    for k in ("projects", "hidden"):
+        s[k] = [x for x in (s[k] if isinstance(s[k], list) else []) if isinstance(x, str) and x][:200]
+    s["onboarded"], s["demo"] = bool(s["onboarded"]), bool(s["demo"])
     os.makedirs(_home(), exist_ok=True)
     with open(os.path.join(_home(), "settings.json"), "w", encoding="utf-8") as f:
         json.dump(s, f, indent=1)
@@ -117,6 +121,100 @@ def discover(claude_dir):
                     "git": exists and w.git(cwd, "rev-parse", "--git-dir") is not None})
     out.sort(key=lambda p: p["last"], reverse=True)
     return out
+
+
+def demo_dir():
+    return os.path.join(_home(), "demo")
+
+
+def _claude_dir_for(repo, s):
+    """Demo projects live in their own synthetic workspace; everything else uses the configured Claude folder."""
+    d = os.path.realpath(demo_dir())
+    return os.path.join(d, "claude") if os.path.realpath(repo).startswith(d + os.sep) else s["claude_dir"]
+
+
+def enable_demo():
+    """Create the synthetic demo workspace (fake repos and logs, no real data) and show it in Projects."""
+    import runpy
+    root = demo_dir()
+    if not os.path.isdir(os.path.join(root, "claude")):
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "examples", "make_demo_workspace.py")
+        if not os.path.isfile(script):
+            raise UserError("Demo files are missing from this installation")
+        old = sys.argv
+        sys.argv = [script, root]
+        try:
+            runpy.run_path(script, run_name="__demo__")
+        except Exception:
+            shutil.rmtree(root, ignore_errors=True)
+            raise UserError("Could not create the demo workspace (is Git installed?)")
+        finally:
+            sys.argv = old
+    save_settings({"demo": True})
+    return [p for p in all_projects(load_settings()) if p.get("demo")]
+
+
+def _norm(p):
+    return os.path.realpath(os.path.expanduser(p))
+
+
+def all_projects(s):
+    """Claude-discovered projects + demo + folders the user added, minus ones the user removed from WorkReceipt."""
+    ps = discover(s["claude_dir"])
+    if s.get("demo"):
+        for p in discover(os.path.join(demo_dir(), "claude")):
+            p["demo"] = True
+            ps.append(p)
+    have = {_norm(p["path"]) for p in ps}
+    for path in s.get("projects", []):
+        if _norm(path) not in have:
+            ex = os.path.isdir(path)
+            ps.append({"path": path, "name": os.path.basename(path.rstrip("/\\")) or path, "sessions": 0, "last": "", "mtimes": [],
+                       "exists": ex, "git": ex and w.git(path, "rev-parse", "--git-dir") is not None, "manual": True})
+    hid = {_norm(x) for x in s.get("hidden", [])}
+    ps = [p for p in ps if _norm(p["path"]) not in hid]
+    ps.sort(key=lambda p: p["last"], reverse=True)
+    return ps
+
+
+def add_project(path):
+    path = (path or "").strip()
+    if not path or not os.path.isabs(os.path.expanduser(path)):
+        raise UserError("Choose a folder using the folder picker or an absolute path")
+    path = os.path.abspath(os.path.expanduser(path))
+    if not os.path.isdir(path):
+        raise UserError("That folder does not exist or cannot be read")
+    s = load_settings()
+    save_settings({"projects": [x for x in s["projects"] if _norm(x) != _norm(path)] + [path],
+                   "hidden": [x for x in s["hidden"] if _norm(x) != _norm(path)]})
+    return path
+
+
+def remove_project(path):
+    """Hide from WorkReceipt only. Never touches the folder or the Claude Code logs."""
+    s = load_settings()
+    save_settings({"projects": [x for x in s["projects"] if _norm(x) != _norm(path)],
+                   "hidden": s["hidden"] + [path]})
+
+
+def delete_report(name):
+    """Delete an exported report (and its PDF) that this app created. Only files listed in history are ever touched."""
+    h, keep, hit = history(), [], None
+    for rec in h:
+        if hit is None and os.path.basename(rec.get("html") or "") == os.path.basename(name or ""):
+            hit = rec
+        else:
+            keep.append(rec)
+    if hit is None:
+        raise NotFound()
+    for k in ("html", "pdf"):
+        if hit.get(k):
+            try:
+                os.remove(hit[k])
+            except OSError:
+                pass
+    with open(os.path.join(_home(), "history.json"), "w", encoding="utf-8") as f:
+        json.dump(keep, f)
 
 
 def weekly(projects, weeks=12):
@@ -414,7 +512,7 @@ def build(opts, settings=None):
     since, until = _dates(opts.get("since") or "", opts.get("until") or "")
     terms = _terms(s, opts)
     skipped = Counter()
-    sessions, _pdir = w.load_sessions(s["claude_dir"], repo, since, until, skipped)
+    sessions, _pdir = w.load_sessions(_claude_dir_for(repo, s), repo, since, until, skipped)
     g = w.git_summary(repo, since, until, opts.get("git_author") or None)
     is_git = g is not None
     commits, files, ins, dele, n_auth = g or ([], Counter(), 0, 0, 0)
@@ -544,7 +642,7 @@ def export(opts, approved, title_edits, settings=None):
     if opts.get("pdf"):
         pdf = to_pdf(path)
     _add_history({"project": ctx["project"], "repo": os.path.abspath(opts["repo"]), "period": ctx["period"], "html": path, "pdf": pdf,
-                  "at": datetime.now().strftime("%Y-%m-%d %H:%M"), "requests": ctx["n_items"], "commits": ctx["n_commits"],
+                  "client": (opts.get("client") or "")[:80], "at": datetime.now().strftime("%Y-%m-%d %H:%M"), "requests": ctx["n_items"], "commits": ctx["n_commits"],
                   "checks": len(ctx["checks"]), "high_reviewed": len(high)})
     return {"ok": True, "html_path": path, "pdf_path": pdf, "high_reviewed": len(high), "edits_applied": applied,
             "edits_dropped": dropped, "html": html}

@@ -8,13 +8,13 @@ const I = {
   gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
   dl: '<path d="M12 4v10M8 10l4 4 4-4M5 19h14"/>', arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>', plus: '<path d="M12 5v14M5 12h14"/>',
   chart: '<path d="M4 19V5M4 19h16M8 15v-4M12 15V8M16 15v-6"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-  git: '<circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 8v8M8 6c6 0 8 2 8 6"/>', check: '<path d="M5 12l5 5 9-10"/>'
+  git: '<circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 8v8M8 6c6 0 8 2 8 6"/>', check: '<path d="M5 12l5 5 9-10"/>', lib: '<path d="M4 6h16M4 12h16M4 18h10"/>'
 };
 const ic = (n, s = 14) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${I[n]}</svg>`;
-const TABS = [["overview", "Overview"], ["projects", "Projects"], ["studio", "Report Studio"], ["privacy", "Privacy Center"], ["settings", "Settings"]];
-const ICON = { overview: "grid", projects: "folder", studio: "doc", privacy: "shield", settings: "gear" };
+const TABS = [["overview", "Overview"], ["projects", "Projects"], ["studio", "Report Studio"], ["privacy", "Privacy Center"], ["reports", "Reports"], ["settings", "Settings"]];
+const ICON = { overview: "grid", projects: "folder", studio: "doc", privacy: "shield", reports: "lib", settings: "gear" };
 
-const S = { tab: "", data: null, repo: "", since: "", until: "", client: "", author: "", gitAuthor: "", terms: [], prev: null,
+const S = { tab: "overview", ob: null, q: "", rf: "", rt: "", busy: "", data: null, repo: "", since: "", until: "", client: "", author: "", gitAuthor: "", terms: [], prev: null,
   titles: {}, disp: {}, open: new Set(), dlg: null, showCleared: false, loading: false, err: "", html: null, exporting: false, lastExport: null, repoDraft: null };
 
 async function api(path, body) {
@@ -22,6 +22,28 @@ async function api(path, body) {
   const j = await r.json().catch(() => ({}));
   if (!r.ok && r.status !== 409) throw new Error(j.error || `Request failed (${r.status})`);
   return Object.assign(j, { _status: r.status });
+}
+const native = () => (window.pywebview && window.pywebview.api) || null;
+async function pickFolder() {                      // native macOS dialog in the app; typed path is the browser fallback
+  const n = native();
+  if (n && n.pick_folder) { try { return (await n.pick_folder()) || null; } catch (e) { toast("Could not open the folder dialog"); return null; } }
+  return null;
+}
+async function openFile(path, name) {
+  const n = native();
+  if (n && n.open_report) { if (!(await n.open_report(path))) toast("Could not open that file"); return; }
+  window.open("/report/" + encodeURIComponent(name), "_blank", "noopener");
+}
+async function revealFile(path) {
+  const n = native();
+  if (n && n.reveal) { if (!(await n.reveal(path))) toast("Could not reveal that file"); return; }
+  toast("Reveal in Finder is available in the desktop app. File: " + path);
+}
+async function addProjectFlow(typed) {
+  let path = typed || await pickFolder();
+  if (!path) { if (!native()) { go("projects"); setTimeout(() => $("#repo")?.focus(), 50); toast("Type or paste a folder path, then press Use this folder"); } return null; }
+  try { const r = await api("/api/project/add", { path }); await loadState(); pick(r.path); toast("Project added"); return r.path; }
+  catch (e) { toast(e.message); return null; }
 }
 function toast(m) { const t = $("#toast"); t.textContent = m; t.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("on"), 3200); }
 const opts = () => ({ repo: S.repo, since: S.since, until: S.until, client: S.client, author: S.author, git_author: S.gitAuthor, terms: S.terms });
@@ -45,6 +67,8 @@ function detRow(d) {
 }
 function dialogHTML() {
   const g = S.dlg; if (!g) return "";
+  if (g.kind === "delrep") return `<div class="ovl" role="alertdialog" aria-modal="true" aria-label="Delete report"><div class="dlgbox"><h3>Delete this report?</h3><p class="note">The exported HTML and PDF files are removed from disk. This cannot be undone.</p><div class="dact"><button class="btn dark" id="confirmdel">Delete report</button><button class="btn" data-close="1">Cancel</button></div></div></div>`;
+  if (g.kind === "rmproj") return `<div class="ovl" role="alertdialog" aria-modal="true" aria-label="Remove project"><div class="dlgbox"><h3>Remove from WorkReceipt?</h3><p class="note">The project is only hidden here. Its folder, Git history and Claude Code logs are not changed or deleted.</p><div class="dact"><button class="btn dark" id="confirmdel">Remove project</button><button class="btn" data-close="1">Cancel</button></div></div></div>`;
   const d = highD().find(x => x.id === g.id); if (!d) return "";
   if (g.kind === "reveal") return `<div class="ovl" role="dialog" aria-modal="true" aria-label="Reveal value"><div class="dlgbox"><h3>Original value</h3><p class="note">${esc(d.where)}, line ${d.line}. Shown only on this screen, only for this detection. It is not logged, stored or sent anywhere, and hides itself in 20 seconds.</p>
     ${g.value == null ? (g.err ? `<p class="note">${esc(g.err)}</p>` : '<p class="note">Loading…</p>') : '<pre class="revealed" id="rv"></pre>'}<div class="dact"><button class="btn dark" data-close="1">Hide and close</button></div></div></div>`;
@@ -74,19 +98,17 @@ function applyTheme() {
   const dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.dataset.theme = dark ? "dark" : "light";
 }
-function go(id) {
-  const el = id === "top" ? document.body : document.getElementById(id); if (!el) return;
-  const rm = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (id === "top") scrollTo({ top: 0, behavior: rm ? "auto" : "smooth" }); else el.scrollIntoView({ behavior: rm ? "auto" : "smooth", block: "start" });
-  history.replaceState(null, "", id === "top" ? location.pathname : "#" + id);
+function go(id) {                         // switch screen; all state (project, edits, reviews, preview) lives in S and survives
+  if (!VIEWS_OK.includes(id)) return;
+  S.tab = id; cache.screen = null; history.replaceState(null, "", "#" + id);
+  render(); const m = $("#screen"); m.scrollTop = 0; m.focus({ preventScroll: true });
 }
-
+const VIEWS_OK = ["overview", "projects", "studio", "privacy", "reports", "settings"];
 const cache = {};
-function setHTML(el, html) { if (cache[el.id] !== html) { cache[el.id] = html; el.innerHTML = html; } }
+function setHTML(el, html) { const k = el.id + S.tab; if (cache[el.id] !== k + html) { cache[el.id] = k + html; el.innerHTML = html; } }
 function renderChrome() {
   const hp = pendingHigh().length;
-  setHTML($("#tabs"), TABS.map(([k, l]) => `<button class="tab" data-go="${k}" ${S.tab === k ? 'aria-current="true"' : ""}>${l}${k === "privacy" && hp ? `<span class="dot">${hp}</span>` : ""}</button>`).join(""));
-  $("#tabs .tab[aria-current]")?.scrollIntoView({ inline: "center", block: "nearest" });
+  setHTML($("#tabs"), TABS.map(([k, l]) => `<button class="tab" data-go="${k}" ${S.tab === k ? 'aria-current="page"' : ""}>${ic(ICON[k], 16)}<span>${l}</span>${k === "privacy" && hp ? `<span class="dot">${hp}</span>` : ""}</button>`).join(""));
 }
 
 /* ---------- Overview ---------- */
@@ -99,9 +121,9 @@ function vOverview() {
   const d = S.data, ps = d.projects, hist = d.history, wk = d.weekly, sess = ps.reduce((a, p) => a + p.sessions, 0);
   const max = Math.max(1, ...wk.map(x => x.n)), thisWeek = wk[wk.length - 1].n, lastWeek = wk[wk.length - 2]?.n || 0;
   const hp = pendingHigh().length;
-  const noDir = !d.claude_dir_ok;
+  const noDir = !d.claude_dir_ok && !ps.length;
   return `<div><div class="ph"><div><h2>Overview <span class="chip">${today()}</span></h2><p>Your projects, recent Claude Code activity and exported reports.</p></div>
-    <div class="act"><button class="btn dark" data-go="projects">${ic("plus")} New report</button></div></div>
+    <div class="act"><button class="btn" id="addproj">${ic("plus")} Add project</button><button class="btn dark" id="genreport">${ic("doc")} Generate report</button><button class="btn" id="openrecent" ${hist.length ? "" : "disabled"}>Open recent report</button></div></div>
   ${noDir ? `<div class="callout err"><div><b>Claude Code folder not found.</b> No <span class="mono">projects</span> folder at <span class="mono">${esc(d.settings.claude_dir)}</span>. Set the correct location in Settings.</div></div>` : ""}
   <div class="grid g4">
     <div class="card stat"><div class="k">Projects ${ic("folder", 13)}</div><div class="v">${ps.length}</div><div class="d">${ps.filter(p => p.git).length} with Git history</div></div>
@@ -117,16 +139,17 @@ function vOverview() {
       `<p class="note">Load a project's activity to scan it for secrets. Nothing is checked until you do.</p><button class="linkbtn" data-go="projects">Choose a project ${ic("arrow")}</button>`}
     ${ps.filter(p => p.exists && !p.git).slice(0, 2).map(p => `<div class="row"><div class="grow"><div class="t">${esc(p.name)}</div><div class="s">Not a Git repository — report would have no delivered changes</div></div></div>`).join("")}</div></div>
   <div class="card sec"><h3>Recent reports <span class="chip">${hist.length}</span></h3>
-    ${hist.length ? `<table class="tbl"><thead><tr><th>Project</th><th>Period</th><th class="hide-m">Requests</th><th class="hide-m">Commits</th><th>Exported</th><th></th></tr></thead><tbody>${hist.slice(0, 6).map(h => `<tr><td><b style="font-weight:500">${esc(h.project)}</b></td><td class="mono">${esc(h.period)}</td><td class="hide-m">${h.requests}</td><td class="hide-m">${h.commits}</td><td>${esc(h.at)}</td><td style="text-align:right"><a class="btn sm" target="_blank" rel="noopener" href="/report/${encodeURIComponent(h.html.split(/[\\/]/).pop())}">Open</a></td></tr>`).join("")}</tbody></table>` : `<div class="empty"><b>No reports yet</b>Pick a project, load its activity and export your first report.<br><button class="btn dark" data-go="projects">Choose a project</button></div>`}</div></div>`;
+    ${hist.length ? `<table class="tbl"><thead><tr><th>Project</th><th>Period</th><th class="hide-m">Requests</th><th class="hide-m">Commits</th><th>Exported</th><th></th></tr></thead><tbody>${hist.slice(0, 6).map(h => `<tr><td><b style="font-weight:500">${esc(h.project)}</b></td><td class="mono">${esc(h.period)}</td><td class="hide-m">${h.requests}</td><td class="hide-m">${h.commits}</td><td>${esc(h.at)}</td><td style="text-align:right"><button class="btn sm" data-open="${esc(h.html)}">Open</button></td></tr>`).join("")}</tbody></table>` : `<div class="empty"><b>No reports yet</b>Pick a project, load its activity and export your first report.<br><button class="btn dark" data-go="projects">Choose a project</button></div>`}</div></div>`;
 }
 
 /* ---------- Projects ---------- */
 function vProjects() {
   const d = S.data, ps = d.projects;
   const p = proj();
-  return `<div><div class="ph"><div><h2>Projects <span class="chip">${ps.length} found</span></h2><p>Choose a repository and the period to report on.</p></div></div>
-  <div class="card"><h3>Claude Code projects</h3>${ps.length ? `<table class="tbl"><thead><tr><th>Project</th><th class="hide-m">Folder</th><th>Sessions</th><th class="hide-m">Last activity</th><th>Git</th></tr></thead><tbody>${ps.map(x => `<tr class="click" data-pick="${esc(x.path)}" ${x.path === S.repo ? 'style="background:var(--teal-soft)"' : ""}><td><b style="font-weight:500">${esc(x.name)}</b></td><td class="mono hide-m" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.path)}</td><td>${x.sessions}</td><td class="hide-m">${esc(x.last)}</td><td>${!x.exists ? '<span class="badge bad">folder missing</span>' : x.git ? '<span class="badge ok">Git</span>' : '<span class="badge">no Git</span>'}</td></tr>`).join("")}</tbody></table>` :
+  return `<div><div class="ph"><div><h2>Projects <span class="chip">${ps.length} found</span></h2><p>Choose a repository and the period to report on. Removing a project only hides it here; your files are never touched.</p></div><div class="act"><button class="btn" id="refresh">Refresh</button><button class="btn dark" id="addproj">${ic("plus")} Add project</button></div></div>
+  <div class="card"><h3>Claude Code projects</h3>${ps.length ? `<table class="tbl"><thead><tr><th>Project</th><th class="hide-m">Folder</th><th>Sessions</th><th class="hide-m">Last activity</th><th>Git</th><th></th></tr></thead><tbody>${ps.map(x => `<tr class="click" data-pick="${esc(x.path)}" ${x.path === S.repo ? 'style="background:var(--teal-soft)"' : ""}><td><b style="font-weight:500">${esc(x.name)}</b></td><td class="mono hide-m" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.path)}</td><td>${x.sessions}</td><td class="hide-m">${esc(x.last)}</td><td>${!x.exists ? '<span class="badge bad">folder missing</span>' : x.git ? '<span class="badge ok">Git</span>' : '<span class="badge">no Git</span>'}</td><td style="text-align:right;white-space:nowrap"><button class="btn sm" data-rmproj="${esc(x.path)}" aria-label="Remove ${esc(x.name)} from WorkReceipt">Remove</button></td></tr>`).join("")}</tbody></table>` :
     `<div class="empty"><b>${d.claude_dir_ok ? "No sessions found" : "Claude Code folder not found"}</b>${d.claude_dir_ok ? "Claude Code has not recorded sessions in this location yet." : "Check the location in Settings."}<br><button class="btn" data-go="settings">Open Settings</button></div>`}
+  ${p ? `<div class="callout ${p.exists ? "ok" : ""} sec"><div><b>${esc(p.name)}</b> <span class="mono">${esc(p.path)}</span><br>${!p.exists ? "This folder was moved or deleted. Remove it, or add its new location." : `${p.sessions} Claude Code session file(s)${p.sessions ? "" : " found. If you expected some, set the Claude Code folder in Settings"} · ${p.git ? "Git repository detected" : "not a Git repository, so reports will have no delivered changes"}${p.demo ? " · synthetic demo data" : ""}`}</div></div>` : ""}
   <div class="grid sec" style="grid-template-columns:1fr auto;align-items:end"><label class="field">Or enter a repository folder
     <input id="repo" value="${esc(S.repoDraft ?? S.repo)}" placeholder="/Users/you/projects/client-site" spellcheck="false"></label><button class="btn" id="usepath">Use this folder</button></div></div>
   <div class="card sec"><h3>Period &amp; filters ${p ? `<span class="chip">${esc(p.name)}</span>` : ""}</h3>
@@ -149,7 +172,7 @@ function vStudio() {
   return `<div><div class="ph"><div><h2>Report Studio <span class="chip">${esc(P.project)}</span></h2><p>${esc(P.period)} · Git is the evidence of delivered changes; requests are not proof of completion.</p></div>
     <div class="act"><button class="btn" id="preview">${S.html ? "Refresh preview" : "Preview"}</button><button class="btn dark" id="export" ${S.exporting ? "disabled" : ""}>${ic("dl")} Export report</button></div></div>
   ${pend ? `<div class="callout"><div><b>${pend} high-severity masked value${pend > 1 ? "s" : ""} not reviewed yet.</b> Export unlocks after you review each one in the <a href="#privacy" data-go="privacy" style="color:var(--teal);font-weight:500">Privacy Center</a>.</div></div>` : ""}
-  ${S.lastExport ? `<div class="callout ok"><div><b>Exported.</b> Saved to <span class="mono">${esc(S.lastExport.html_path)}</span>${S.lastExport.pdf_path ? ` and <span class="mono">${esc(S.lastExport.pdf_path)}</span>` : ""}. <a target="_blank" rel="noopener" style="color:var(--teal);font-weight:500" href="/report/${encodeURIComponent(S.lastExport.html_path.split(/[\\/]/).pop())}">Open report</a></div></div>` : ""}
+  ${S.lastExport ? `<div class="callout ok"><div><b>Exported.</b> Saved to <span class="mono">${esc(S.lastExport.html_path)}</span>${S.lastExport.pdf_path ? ` and <span class="mono">${esc(S.lastExport.pdf_path)}</span>` : ""}. <button class="linkbtn" data-open="${esc(S.lastExport.html_path)}">Open report</button></div></div>` : ""}
   <div class="grid g4">
     <div class="card stat"><div class="k">Work requests</div><div class="v">${P.requests.length}</div><div class="d">${nTitles ? nTitles + " edited" : "from session logs"}</div></div>
     <div class="card stat"><div class="k">Commits ${ic("git", 13)}</div><div class="v">${P.n_commits}</div><div class="d">${P.authors} author(s)</div></div>
@@ -162,7 +185,7 @@ function vStudio() {
     <div class="card"><h3>Verification</h3>${P.n_checks ? `<div class="pill-row"><span class="badge ok">${cs.ok} no error reported</span><span class="badge bad">${cs.failed} failed</span><span class="badge">${cs.unknown} no result</span></div>
       <p class="note" style="margin:8px 0">${cs.superseded} re-run later · ${cs.edited} followed by edits and not re-run · ${cs.possible} possibly affected · ${cs.current} no later change.</p>
       <div class="list">${P.checks.slice(-5).reverse().map(c => `<div class="row"><div class="grow"><div class="t mono" title="${esc(c.cmd)}">${esc(c.cmd.slice(0, 70))}</div><div class="s">${esc(c.date)}${c.state === "edited" ? " · edited after, not re-run" : c.state === "superseded" ? " · re-run later" : ""}</div></div><span class="badge ${c.ok === true ? "ok" : c.ok === false ? "bad" : ""}">${c.ok === true ? "no error" : c.ok === false ? "failed" : "no result"}</span></div>`).join("")}</div>` : `<div class="empty" style="padding:14px"><b>No checks recorded</b>Test, lint or build commands appear here.</div>`}</div></div></div>
-  <div class="card sec"><h3>Report preview <span class="chip">masked</span></h3>${S.html ? `<iframe class="frame" sandbox="allow-same-origin" title="Report preview" srcdoc="${esc(S.html)}"></iframe><p class="note" style="margin-top:8px">The exported file can be printed or saved as PDF from your browser.</p>` : `<div class="empty"><b>Preview not generated</b>Preview shows exactly what will be exported, after masking.<br><button class="btn" id="preview2">Generate preview</button></div>`}</div></div>`;
+  <div class="card sec"><h3>Report preview <span class="chip">masked</span></h3>${S.html ? `<iframe class="frame" sandbox="allow-same-origin" title="Report preview" srcdoc="${esc(S.html)}"></iframe><p class="note" style="margin-top:8px">${S.data.chrome ? "Export also creates a PDF." : "PDF needs Google Chrome in this build; the HTML export always works and can be printed to PDF."}</p>` : `<div class="empty"><b>Preview not generated</b>Preview shows exactly what will be exported, after masking.<br><button class="btn" id="preview2">Generate preview</button></div>`}</div></div>`;
 }
 
 /* ---------- Privacy Center ---------- */
@@ -192,25 +215,58 @@ function vPrivacy() {
 function vSettings() {
   const s = S.data.settings;
   return `<div><div class="ph"><div><h2>Settings</h2><p>Local directories, appearance and report defaults.</p></div><div class="act"><button class="btn dark" id="savesettings">Save settings</button></div></div>
-  <div class="grid g3f"><div class="card"><h3>Local directories</h3><div class="grid"><label class="field">Claude Code folder<input id="s_claude" value="${esc(s.claude_dir)}" spellcheck="false"><small>${S.data.claude_dir_ok ? "projects folder found" : "no projects folder at this location"}</small></label>
-    <label class="field">Reports folder<input id="s_out" value="${esc(s.out_dir)}" spellcheck="false"><small>Created on first export</small></label></div></div>
+  <div class="grid g3f"><div class="card"><h3>Local directories</h3><div class="grid"><label class="field">Claude Code folder<span class="inrow"><input id="s_claude" value="${esc(s.claude_dir)}" spellcheck="false"><button type="button" class="btn sm" data-choose="s_claude">Choose…</button></span><small>${S.data.claude_dir_ok ? "projects folder found" : "no projects folder at this location"}</small></label>
+    <label class="field">Default reports folder<span class="inrow"><input id="s_out" value="${esc(s.out_dir)}" spellcheck="false"><button type="button" class="btn sm" data-choose="s_out">Choose…</button></span><small>Created on first export</small></label></div></div>
   <div class="card"><h3>Appearance</h3><div class="seg" id="s_theme">${["system", "light", "dark"].map(t => `<button data-theme="${t}" class="${s.theme === t ? "on" : ""}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}</div></div>
   <div class="card"><h3>Report defaults</h3><div class="grid"><label class="field">Prepared by<input id="s_author" value="${esc(s.author)}" placeholder="Your name"></label><label class="field">Default client<input id="s_client" value="${esc(s.client)}" placeholder="Optional"></label></div></div></div>
   <div class="card sec"><h3>Always-redact terms</h3><label class="field"><span>One per line. Saved on this computer and applied to every report.</span><textarea id="s_terms" rows="4" style="border:1px solid var(--line-2);border-radius:10px;background:var(--surface);padding:9px 11px;font-size:13px;resize:vertical" spellcheck="false">${esc((s.redact_terms || []).join("\n"))}</textarea></label></div>
   <div class="card sec"><h3>About this app</h3><div class="grid gform"><div class="note"><b>Version</b><br>WorkReceipt ${esc(S.data.version)}</div><div class="note"><b>Engine</b><br>Python report engine (stdlib only)</div><div class="note"><b>Server</b><br>${esc(location.host)} — this computer only</div><div class="note"><b>Data</b><br>Settings and report history: <span class="mono">~/.workreceipt</span></div></div></div>
+  <div class="card sec"><h3>Privacy &amp; storage</h3><p class="note">Everything runs on this computer. No account, no telemetry, no uploads, no AI service. Detected secrets are never stored: settings and report history hold only project names, dates, counts and file paths. Local data: <span class="mono">${esc(S.data.home)}</span>. Reports are saved to your reports folder.</p></div>
+  <div class="card sec"><h3>Updates</h3><p class="note">Manual updates: download the newest WorkReceipt from its release page, open the disk image and drag the app to Applications, replacing the old one. Your settings and reports are kept. This app does not check for updates automatically.</p></div>
   <div class="card sec"><h3>PDF export</h3><p class="note">${S.data.chrome ? "Chrome was found on this computer; “Export report” can also create a PDF." : "Chrome was not found. Open the exported HTML and use your browser’s Print → Save as PDF."}</p></div></div>`;
 }
 
-const VIEWS = { overview: vOverview, projects: vProjects, studio: vStudio, privacy: vPrivacy, settings: vSettings };
+/* ---------- Reports library ---------- */
+function vReports() {
+  const q = S.q.trim().toLowerCase();
+  const all = S.data.history, list = all.filter(h => (!q || (h.project + " " + (h.client || "")).toLowerCase().includes(q)) && (!S.rf || h.at.slice(0, 10) >= S.rf) && (!S.rt || h.at.slice(0, 10) <= S.rt));
+  return `<div><div class="ph"><div><h2>Reports <span class="chip">${all.length}</span></h2><p>Reports exported from this app, stored on this computer.</p></div><div class="act"><button class="btn dark" id="genreport">${ic("doc")} New report</button></div></div>
+  <div class="card"><div class="grid gform"><label class="field">Search project or client<input id="rq" type="search" value="${esc(S.q)}" placeholder="Search" spellcheck="false"></label><label class="field">From<input type="date" id="rf" value="${esc(S.rf)}"></label><label class="field">To<input type="date" id="rt" value="${esc(S.rt)}"></label></div></div>
+  <div class="card sec">${list.length ? `<table class="tbl"><thead><tr><th>Project</th><th class="hide-m">Client</th><th>Period</th><th class="hide-m">Items</th><th>Exported</th><th></th></tr></thead><tbody>${list.map(h => { const n = esc(h.html.split(/[\\/]/).pop()); return `<tr><td><b style="font-weight:500">${esc(h.project)}</b></td><td class="hide-m">${esc(h.client || "—")}</td><td class="mono">${esc(h.period)}</td><td class="hide-m">${h.requests} req · ${h.commits} commits</td><td>${esc(h.at)}</td>
+    <td style="text-align:right;white-space:nowrap"><button class="btn sm" data-open="${esc(h.html)}">Open</button> ${h.pdf ? `<button class="btn sm" data-open="${esc(h.pdf)}">PDF</button> ` : ""}<button class="btn sm" data-showfile="${esc(h.html)}">Show in Finder</button> <button class="btn sm" data-delrep="${n}" aria-label="Delete report ${esc(h.project)}">Delete</button></td></tr>`; }).join("")}</tbody></table>` :
+    `<div class="empty"><b>${all.length ? "No reports match" : "No reports yet"}</b>${all.length ? "Clear the search or date filters." : "Export a report from Report Studio and it will be listed here."}</div>`}</div></div>`;
+}
+
+/* ---------- Onboarding ---------- */
+const OB = [
+  ["Welcome to WorkReceipt", "Turn your Claude Code sessions and Git history into a clear report your client can read. No account and no sign-in."],
+  ["Private by design", "Everything is analysed on this computer. Nothing is uploaded, there is no telemetry and no AI service is called. Secrets are masked, and every high-severity one needs your review before a report can be exported."],
+  ["Choose your first project", "Pick a project folder, or explore with a synthetic demo project that contains no real data. You can add more later."],
+];
+function obHTML() {
+  const o = S.ob; if (!o) return "";
+  const [h, p] = OB[o.step];
+  const body = o.step === 2 ? `<div class="dact" style="flex-direction:column;align-items:stretch"><button class="btn teal lg" id="obpick">Select project folder…</button><button class="btn lg" id="obdemo">${o.busy ? "Creating demo…" : "Try the demo project"}</button>${o.err ? `<p class="note" style="color:var(--red)">${esc(o.err)}</p>` : ""}</div>` : "";
+  return `<div class="ovl ob" role="dialog" aria-modal="true" aria-label="Welcome"><div class="dlgbox"><div class="steps" aria-hidden="true">${OB.map((_, i) => `<i class="${i <= o.step ? "on" : ""}"></i>`).join("")}</div><h3>${h}</h3><p class="note" style="font-size:14px;margin:8px 0 14px">${p}</p>${body}
+  <div class="dact">${o.step > 0 ? '<button class="btn" id="obback">Back</button>' : ""}${o.step < 2 ? '<button class="btn dark" id="obnext">Continue</button>' : '<button class="btn" id="obskip">Finish setup</button>'}</div></div></div>`;
+}
+function showOb() { const r = $("#obroot"); r.innerHTML = obHTML(); r.querySelector("button.dark,button.teal,button")?.focus(); }
+async function finishOb(go_) {
+  S.ob = null; showOb();
+  try { S.data.settings = await api("/api/settings", { onboarded: true }); } catch (e) { toast(e.message); }
+  go(go_ || "overview");
+}
+
+const VIEWS = { overview: vOverview, projects: vProjects, studio: vStudio, privacy: vPrivacy, reports: vReports, settings: vSettings };
 function render() {
   if (!S.data) return;
   renderChrome();
-  for (const k of Object.keys(VIEWS)) setHTML($(`#${k} .body`), VIEWS[k]());   // unchanged sections keep their DOM (preview, focus, scroll)
+  setHTML($("#screen"), (VIEWS[S.tab] || vOverview)());   // unchanged screen keeps its DOM (focus, preview, edits)
   fitFrame();
 }
-function fitFrame() {                                  // the preview grows with its content so the page never has a nested scroller
+function fitFrame() {
   const f = $(".frame"); if (!f) return;
-  const fit = () => { try { f.style.height = f.contentDocument.documentElement.scrollHeight + 8 + "px"; } catch (e) { } };
+  const fit = () => { try { f.style.height = Math.max(420, f.contentDocument.documentElement.scrollHeight + 8) + "px"; } catch (e) { } };
   f.addEventListener("load", fit, { once: true }); fit();
 }
 addEventListener("resize", () => fitFrame());
@@ -249,8 +305,13 @@ function pick(path) { S.repo = path; S.repoDraft = null; S.prev = null; S.html =
 async function rescan() { if (S.repo) { await load(); } else render(); }
 
 document.addEventListener("click", async e => {
-  const t = e.target.closest("[data-go],[data-pick],[data-range],[data-rmterm],button[data-theme],[data-toggle],[data-reveal],[data-review],[data-close],button[id]");
+  const t = e.target.closest("[data-open],[data-showfile],[data-delrep],[data-rmproj],[data-choose],[data-go],[data-pick],[data-range],[data-rmterm],button[data-theme],[data-toggle],[data-reveal],[data-review],[data-close],button[id]");
   if (!t) return;
+  if (t.dataset.open) { const n = t.dataset.open.split(/[\\/]/).pop(); return openFile(t.dataset.open, n); }
+  if (t.dataset.showfile) return revealFile(t.dataset.showfile);
+  if (t.dataset.delrep) { S.dlg = { kind: "delrep", name: t.dataset.delrep }; return showDlg(); }
+  if (t.dataset.rmproj) { S.dlg = { kind: "rmproj", path: t.dataset.rmproj }; return showDlg(); }
+  if (t.dataset.choose) { const v = await pickFolder(); if (v) $("#" + t.dataset.choose).value = v; else if (!native()) toast("Type or paste the folder path"); return; }
   if (t.dataset.toggle) { const id = t.dataset.toggle; S.open.has(id) ? S.open.delete(id) : S.open.add(id); return render(); }
   if (t.dataset.close) return closeDlg();
   if (t.dataset.reveal) return doReveal(t.dataset.reveal);
@@ -262,6 +323,17 @@ document.addEventListener("click", async e => {
   if (t.dataset.theme) { S.data.settings.theme = t.dataset.theme; applyTheme(); return render(); }
   switch (t.id) {
     case "theme": S.data.settings.theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark"; applyTheme(); api("/api/settings", { theme: S.data.settings.theme }); break;
+    case "addproj": await addProjectFlow(); break;
+    case "refresh": await loadState(); render(); toast("Project list refreshed"); break;
+    case "genreport": if (S.prev) go("studio"); else if (S.repo) { go("projects"); await load(); } else { go("projects"); toast("Select a project, then Load activity"); } break;
+    case "openrecent": { const h = S.data.history[0]; if (h) openFile(h.html, h.html.split(/[\\/]/).pop()); break; }
+    case "obnext": S.ob.step++; showOb(); break;
+    case "obback": S.ob.step--; showOb(); break;
+    case "obskip": await finishOb("overview"); break;
+    case "obpick": { const path = await pickFolder(); if (!path) { S.ob.err = native() ? "" : "Folder dialog is only available in the desktop app. Skip, then use Add project."; showOb(); break; }
+      try { const r = await api("/api/project/add", { path }); await loadState(); pick(r.path); await finishOb("projects"); } catch (er) { S.ob.err = er.message; showOb(); } break; }
+    case "obdemo": { S.ob.busy = true; S.ob.err = ""; showOb(); try { await api("/api/demo", {}); await loadState(); const d = S.data.projects.find(x => x.demo); if (d) pick(d.path); await finishOb("projects"); } catch (er) { S.ob.busy = false; S.ob.err = er.message; showOb(); } break; }
+    case "confirmdel": { const g = S.dlg; closeDlg(); try { if (g.kind === "delrep") await api("/api/report/delete", { name: g.name, confirm: true }); else { await api("/api/project/remove", { path: g.path }); if (S.repo === g.path) { S.repo = ""; S.prev = null; S.html = null; } } await loadState(); render(); toast(g.kind === "delrep" ? "Report deleted" : "Project removed from WorkReceipt"); } catch (er) { toast(er.message); } break; }
     case "usepath": { const v = $("#repo").value.trim(); if (v) pick(v); break; }
     case "load": syncForm(); await load(); break;
     case "preview": case "preview2": await makePreview(); break;
@@ -284,6 +356,7 @@ document.addEventListener("change", e => {
 });
 document.addEventListener("input", e => {
   if (e.target.id === "repo") S.repoDraft = e.target.value;
+  if (["rq", "rf", "rt"].includes(e.target.id)) { const id = e.target.id, pos = e.target.selectionStart; S[{ rq: "q", rf: "rf", rt: "rt" }[id]] = e.target.value; cache.screen = null; render(); const n = $("#" + id); n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) { } }
   if (["since", "until", "gitauthor", "client"].includes(e.target.id)) syncForm();
   const r = e.target.dataset?.req;
   if (r != null) { const orig = S.prev.requests.find(q => q.key === r)?.title, v = e.target.textContent.trim(); if (v && v !== orig) S.titles[r] = v; else delete S.titles[r]; S.html = null; e.target.closest(".req").classList.toggle("edited", r in S.titles); }
@@ -294,26 +367,19 @@ document.addEventListener("focusout", e => { if (["since", "until", "gitauthor",
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyTheme);
 
 
-function initScroll() {
-  const rm = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const secs = [...document.querySelectorAll(".band")];
-  if ("IntersectionObserver" in window) {
-    const spy = new IntersectionObserver(es => es.forEach(en => { if (en.isIntersecting && S.tab !== en.target.id) { S.tab = en.target.id; renderChrome(); } }), { rootMargin: "-40% 0px -55% 0px" });
-    secs.forEach(s => spy.observe(s));
-    const top = new IntersectionObserver(es => es.forEach(en => { if (en.isIntersecting && S.tab) { S.tab = ""; renderChrome(); } }), { rootMargin: "-40% 0px -55% 0px" });
-    top.observe($("#top"));
-    if (!rm) {
-      document.documentElement.classList.add("reveal");
-      const rv = new IntersectionObserver(es => es.forEach(en => { if (en.isIntersecting) { en.target.classList.add("in"); rv.unobserve(en.target); } }), { rootMargin: "0px 0px -8% 0px", threshold: 0.02 });
-      secs.forEach(s => rv.observe(s));
-    }
-  }
-  const tt = $("#totop"); const upd = () => tt.classList.toggle("on", scrollY > 900); addEventListener("scroll", upd, { passive: true }); upd();
-}
+/* drag & drop a project folder (path is only available inside the desktop webview) */
+addEventListener("dragover", e => { e.preventDefault(); $("#dropveil").hidden = false; });
+addEventListener("dragleave", e => { if (!e.relatedTarget) $("#dropveil").hidden = true; });
+addEventListener("drop", async e => {
+  e.preventDefault(); $("#dropveil").hidden = true;
+  const f = e.dataTransfer?.files?.[0], path = f && f.pywebviewFullPath;
+  if (!path) return toast("Drag-and-drop works in the desktop app. Use Add project instead.");
+  await addProjectFlow(path);
+});
 (async () => {
-  initScroll();
   try { await loadState(); S.author = S.data.settings.author; S.client = S.data.settings.client; $("#ver").textContent = "v" + S.data.version; }
-  catch (e) { $("#overview .body").innerHTML = `<div class="callout err"><div>Could not reach the local WorkReceipt server: ${esc(e.message)}</div></div>`; return; }
+  catch (e) { $("#screen").innerHTML = `<div class="callout err" style="margin:30px"><div>Could not reach the local WorkReceipt server: ${esc(e.message)}</div></div>`; return; }
+  const h = location.hash.slice(1); if (VIEWS_OK.includes(h)) S.tab = h;
   render();
-  const h = location.hash.slice(1); if (h && document.getElementById(h)) setTimeout(() => go(h), 80);
+  if (!S.data.settings.onboarded) { S.ob = { step: 0, err: "", busy: false }; showOb(); }
 })();

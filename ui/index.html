@@ -4,47 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="wr-token" content="__TOKEN__">
-<title>WorkReceipt — client-ready work reports</title>
+<title>WorkReceipt</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%230b8a7d'/%3E%3Cpath d='M4 3h8v10l-1.5-1L9 13l-1-1-1 1-1.5-1L4 13z' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<header class="nav" role="navigation" aria-label="Primary">
-  <div class="brand"><div class="logo"><svg viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h10v12l-2-1.2L9 14l-1-1.2L7 14l-2-1.2L3 14z"/><path d="M5.5 5.5h5M5.5 8h5"/></svg></div><span>WorkReceipt</span></div>
-  <nav class="tabs" id="tabs"></nav>
-  <button class="icon-btn" id="theme" aria-label="Toggle theme" title="Toggle theme">
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
-  </button>
-</header>
-<main>
-  <section class="hero" id="top">
-    <div class="eyebrow"><b>WorkReceipt</b> <span>Work reports for client-facing developers</span></div>
-    <h1>Show what you shipped,<br><em>not what you typed</em></h1>
-    <p>Turn Claude Code sessions and Git history into a client-ready report. Local-first, redacted before export.</p>
-    <div class="cta"><button class="btn teal lg" data-go="projects">Choose a project</button><button class="btn lg" data-go="privacy">How privacy works</button></div>
-    <div class="fine">Runs on this computer · nothing is uploaded</div>
-    <div class="points">
-      <div><b>Evidence, not prompts</b><span>Git commits are the proof of delivered work; requests are labelled as requests.</span></div>
-      <div><b>Redacted before export</b><span>Secrets are masked and every high-severity one needs your review.</span></div>
-      <div><b>Local-first</b><span>Logs and repositories are read from disk and never leave your machine.</span></div>
-    </div>
-  </section>
-  <div class="page">
-    <section class="band" id="overview" data-eyebrow="01 · Overview"><div class="body"></div></section>
-    <section class="band" id="projects" data-eyebrow="02 · Projects"><div class="body"></div></section>
-    <section class="band" id="studio" data-eyebrow="03 · Report Studio"><div class="body"></div></section>
-    <section class="band" id="privacy" data-eyebrow="04 · Privacy Center"><div class="body"></div></section>
-    <section class="band" id="settings" data-eyebrow="05 · Settings"><div class="body"></div></section>
-  </div>
-</main>
-<footer class="foot-site"><div class="fin">
-  <div class="brand"><div class="logo"><svg viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h10v12l-2-1.2L9 14l-1-1.2L7 14l-2-1.2L3 14z"/><path d="M5.5 5.5h5M5.5 8h5"/></svg></div><span style="display:inline">WorkReceipt</span> <span class="chip" id="ver" style="display:inline">v0.3.0</span></div>
-  <p>Local-first work reports. Your session logs and repositories are read on this computer and never uploaded. Automatic redaction is best-effort; read every report before you send it.</p>
-  <div class="links"><button data-go="overview">Overview</button><button data-go="projects">Projects</button><button data-go="studio">Report Studio</button><button data-go="privacy">Privacy Center</button><button data-go="settings">Settings</button><button data-go="top">Back to top ↑</button></div>
-</div></footer>
-<button class="totop" id="totop" aria-label="Back to top" data-go="top"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+<div class="shell" id="shell">
+  <aside class="side" aria-label="Sidebar">
+    <div class="brand"><div class="logo"><svg viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h10v12l-2-1.2L9 14l-1-1.2L7 14l-2-1.2L3 14z"/><path d="M5.5 5.5h5M5.5 8h5"/></svg></div><span>WorkReceipt</span></div>
+    <nav class="tabs" id="tabs" aria-label="Primary"></nav>
+    <div class="side-foot"><button class="btn sm" id="theme" aria-label="Toggle light and dark theme" title="Toggle theme">Theme</button><span class="chip" id="ver">v</span></div>
+  </aside>
+  <main id="screen" tabindex="-1" aria-live="polite"><div class="skel" style="width:50%;margin:40px"></div></main>
+</div>
 <div class="toast" id="toast" role="status"></div>
-<script src="app.js"></script>
 <div id="dlgroot"></div>
+<div id="obroot"></div>
+<div class="dropveil" id="dropveil" hidden>Drop a project folder to add it</div>
+<script src="app.js"></script>
 </body>
 </html>

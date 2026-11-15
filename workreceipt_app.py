@@ -11,6 +11,11 @@ TOKEN = secrets.token_urlsafe(24)
 PORT = 8765
 
 
+def _read(path, mode="rb"):
+    with open(path, mode, **({"encoding": "utf-8"} if "b" not in mode else {})) as f:
+        return f.read()
+
+
 class H(BaseHTTPRequestHandler):
     server_version = "WorkReceipt"
 
@@ -42,7 +47,7 @@ class H(BaseHTTPRequestHandler):
             return self._send(403, "bad host", "text/plain")
         path = self.path.split("?")[0]
         if path in ("/", "/index.html"):
-            html = open(os.path.join(UI, "index.html"), encoding="utf-8").read().replace("__TOKEN__", TOKEN)
+            html = _read(os.path.join(UI, "index.html"), "r").replace("__TOKEN__", TOKEN)
             return self._send(200, html, "text/html; charset=utf-8",
                               {"Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
                                                           "frame-src 'self'; connect-src 'self'; font-src 'self'"})
@@ -52,7 +57,7 @@ class H(BaseHTTPRequestHandler):
             return self._report_file(path[len("/report/"):])
         f = os.path.normpath(os.path.join(UI, path.lstrip("/")))
         if f.startswith(UI + os.sep) and os.path.isfile(f):
-            return self._send(200, open(f, "rb").read(), mimetypes.guess_type(f)[0] or "application/octet-stream")
+            return self._send(200, _read(f), mimetypes.guess_type(f)[0] or "application/octet-stream")
         self._send(404, "not found", "text/plain")
 
     def _report_file(self, name):
@@ -62,19 +67,19 @@ class H(BaseHTTPRequestHandler):
                 p = rec.get(key)
                 if p and os.path.basename(p) == os.path.basename(name) and os.path.isfile(p):
                     ct = "application/pdf" if p.endswith(".pdf") else "text/html; charset=utf-8"
-                    return self._send(200, open(p, "rb").read(), ct,
+                    return self._send(200, _read(p), ct,
                                       {"Content-Security-Policy": "sandbox allow-same-origin; default-src 'none'; style-src 'unsafe-inline'"}
                                       if key == "html" else None)
         self._send(404, "not found", "text/plain")
 
     def _state(self):
         s = core.load_settings()
-        projects = core.discover(s["claude_dir"])
+        projects = core.all_projects(s)
         wk = core.weekly(projects)
         for p in projects:
             p.pop("mtimes", None)
         self._json(200, {"settings": s, "projects": projects, "weekly": wk, "history": core.history()[::-1],
-                         "version": core.VERSION, "chrome": bool(core.chrome_path()), "claude_dir_ok": os.path.isdir(os.path.join(s["claude_dir"], "projects"))})
+                         "version": core.VERSION, "home": core._home(), "chrome": bool(core.chrome_path()), "claude_dir_ok": os.path.isdir(os.path.join(s["claude_dir"], "projects"))})
 
     def do_POST(self):
         if not self._host_ok() or self.headers.get("X-WR-Token") != TOKEN:
@@ -103,6 +108,18 @@ class H(BaseHTTPRequestHandler):
                     return self._json(400, {"error": "confirmation required"})
                 r = core.reveal(data, data.get("id"))
                 return self._send(200, json.dumps(r), "application/json")
+            if self.path == "/api/project/add":
+                return self._json(200, {"path": core.add_project(data.get("path"))})
+            if self.path == "/api/project/remove":
+                core.remove_project(data.get("path") or "")
+                return self._json(200, {"ok": True})
+            if self.path == "/api/demo":
+                return self._json(200, {"projects": [{"path": p["path"], "name": p["name"]} for p in core.enable_demo()]})
+            if self.path == "/api/report/delete":
+                if data.get("confirm") is not True:
+                    return self._json(400, {"error": "confirmation required"})
+                core.delete_report(data.get("name") or "")
+                return self._json(200, {"ok": True})
             if self.path == "/api/settings":
                 return self._json(200, core.save_settings(data))
         except core.NotFound:
