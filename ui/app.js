@@ -15,7 +15,7 @@ const TABS = [["overview", "Overview"], ["projects", "Projects"], ["studio", "Re
 const ICON = { overview: "grid", projects: "folder", studio: "doc", privacy: "shield", settings: "gear" };
 
 const S = { tab: "", data: null, repo: "", since: "", until: "", client: "", author: "", gitAuthor: "", terms: [], prev: null,
-  titles: {}, disp: {}, open: new Set(), dlg: null, loading: false, err: "", html: null, exporting: false, lastExport: null, repoDraft: null };
+  titles: {}, disp: {}, open: new Set(), dlg: null, showCleared: false, loading: false, err: "", html: null, exporting: false, lastExport: null, repoDraft: null };
 
 async function api(path, body) {
   const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "X-WR-Token": TOKEN, "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -27,7 +27,9 @@ function toast(m) { const t = $("#toast"); t.textContent = m; t.classList.add("o
 const opts = () => ({ repo: S.repo, since: S.since, until: S.until, client: S.client, author: S.author, git_author: S.gitAuthor, terms: S.terms });
 const highF = () => (S.prev ? S.prev.findings.filter(f => f.severity === "high") : []);
 const highD = () => highF().flatMap(f => f.detections);
-const pendingHigh = () => highD().filter(d => !S.disp[d.id]);
+const pendingHigh = () => highD().filter(d => !d.suppressed && !S.disp[d.id]);
+const needsReview = () => highD().filter(d => !d.suppressed);
+const PRIO = { looks_real: 0, known_format: 0, custom_term: 1, unknown: 2, likely_dummy: 3, test_fixture: 3 };
 const DISP = { credential: "Real credential (rotate it)", not_credential: "Not a credential (test or dummy value)", unsure: "Unsure (treat as sensitive)" };
 const DISP_SHORT = { credential: "real", not_credential: "dummy", unsure: "unsure" };
 function detRow(d) {
@@ -35,8 +37,10 @@ function detRow(d) {
   const loc = d.line ? `${esc(d.where)}${d.at ? " · " + esc(d.at) : ""} · line ${d.line} of ${d.lines}, col ${d.col} · ${d.length} chars` : `${esc(d.where)} · ${d.unitemised} detection(s), not individually locatable (text too large)`;
   const rep = d.in_report === false ? "Masked, and not printed in the exported report (only the first line of each command is shown)." : d.in_report ? "Appears (masked) in the exported report." : "";
   const notes = [d.same_value_elsewhere ? `Same value appears in ${d.same_value_elsewhere} other place(s).` : "", d.inside ? `Inside a ${esc(d.inside)} match.` : "", d.also?.length ? `Also contains: ${d.also.map(esc).join(", ")}.` : "", rep].filter(Boolean).join(" ");
-  const r = S.disp[d.id];
-  return `<div class="det"><div class="dh"><b>#${d.n} of ${d.of}</b><span class="note">${loc}</span></div>${ctx ? `<div class="ctx mono">${ctx}</div>` : ""}${notes ? `<p class="note">${notes}</p>` : ""}
+  const r = S.disp[d.id], c = d.class || {}, cls = c.suppressed ? "teal" : c.category === "looks_real" || c.category === "known_format" ? "high" : "";
+  const why = `<div class="why"><span class="badge ${cls}">${esc(c.label || "")}</span> <span class="note">confidence: ${esc(c.confidence || "low")}. ${esc(c.explanation || "")}</span>${(c.evidence || []).length ? `<ul class="ev">${c.evidence.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>`;
+  if (d.suppressed) return `<div class="det cleared"><div class="dh"><b>#${d.n} of ${d.of}</b><span class="note">${loc}</span></div>${ctx ? `<div class="ctx mono">${ctx}</div>` : ""}${why}<p class="note">Cleared automatically: no review needed. Still masked in the report.</p>${d.line ? `<div class="dact"><button class="btn" data-reveal="${d.id}">Reveal value</button></div>` : ""}</div>`;
+  return `<div class="det"><div class="dh"><b>#${d.n} of ${d.of}</b><span class="note">${loc}</span></div>${ctx ? `<div class="ctx mono">${ctx}</div>` : ""}${why}${notes ? `<p class="note">${notes}</p>` : ""}
     <div class="dact">${d.line ? `<button class="btn" data-reveal="${d.id}">Reveal value</button>` : ""}<button class="btn ${r ? "" : "dark"}" data-review="${d.id}">${r ? "Change review" : "Review"}</button>${r ? `<span class="badge teal">${DISP_SHORT[r]}</span>` : '<span class="badge high">pending</span>'}</div></div>`;
 }
 function dialogHTML() {
@@ -168,7 +172,7 @@ function vPrivacy() {
     <div class="tags">${S.terms.map((t, i) => `<span class="tag">${esc(t)}<button data-rmterm="${i}" aria-label="Remove ${esc(t)}">×</button></span>`).join("")}${(S.data.settings.redact_terms || []).map(t => `<span class="tag" title="Saved in Settings">${esc(t)} <span class="badge teal">saved</span></span>`).join("")}</div>
     <p class="note" style="margin-top:8px">Terms are matched case-insensitively and always count as high severity. ${S.repo ? "Adding a term re-scans the loaded project." : ""}</p></div>`;
   if (!P) return `<div><div class="ph"><div><h2>Privacy Center</h2><p>Review everything that was masked before you export.</p></div></div><div class="card"><div class="empty"><b>Nothing to review yet</b>Load a project's activity and every masked value will be listed here.<br><button class="btn dark" data-go="projects">Choose a project</button></div></div><div class="sec">${termsCard}</div></div>`;
-  const F = P.findings, H = highD(), done = H.length - pendingHigh().length, sv = k => F.filter(f => f.severity === k).reduce((a, f) => a + f.count, 0);
+  const F = P.findings.filter(f => f.severity !== "high" || f.actionable > 0 || S.showCleared), nCleared = highD().filter(d => d.suppressed).length, H = needsReview(), done = H.length - pendingHigh().length, sv = k => k === "high" ? H.length : F.filter(f => f.severity === k).reduce((a, f) => a + f.count, 0);
   return `<div><div class="ph"><div><h2>Privacy Center <span class="chip">${esc(P.project)}</span></h2><p>Values stay masked unless you choose to reveal one. Each high-severity detection needs your own review before export.</p></div></div>
   <div class="grid g4">
     <div class="card stat"><div class="k"><span><span class="sev high"></span> High</span></div><div class="v">${sv("high")}</div><div class="d">detections to review before export</div></div>
@@ -176,10 +180,10 @@ function vPrivacy() {
     <div class="card stat"><div class="k"><span><span class="sev low"></span> Low</span></div><div class="v">${sv("low")}</div><div class="d">paths, IP addresses</div></div>
     <div class="card stat"><div class="k">Export approval</div><div class="v">${H.length ? `${done}/${H.length}` : "Clear"}</div><div class="prog"><i style="width:${H.length ? done / H.length * 100 : 100}%"></i></div><div class="d">${H.length ? (done === H.length ? "all high-severity reviewed" : "reviewed") : "no high-severity findings"}</div></div></div>
   ${H.length && done < H.length ? `<div class="callout sec"><div><b>Check each high-severity item in your own files before approving.</b> If a masked value was a real credential, rotate it. Reviewing records your decision; it does not make anything safe and never unmasks the report. Automatic redaction is best-effort and not a guarantee of confidentiality.</div></div>` : ""}
-  <div class="card sec"><h3>Masked values <span class="chip">${F.length}</span></h3>${F.length ? F.map(f => { const hi = f.severity === "high", op = hi && S.open.has(f.id), nrev = f.detections.filter(d => S.disp[d.id]).length;
-    const head = `<span class="badge ${f.severity}"><span class="sev ${f.severity}"></span>${f.severity}</span> <b>${esc(f.rule)}</b>${f.count > 1 ? ` ×${f.count}` : ""} <span class="note">${esc(f.where)}</span>${hi ? ` <span class="note">· ${nrev}/${f.detections.length} reviewed</span>` : ""}`;
-    return `<div class="grp${op ? " open" : ""}" data-gid="${f.id}">${hi ? `<button type="button" class="gh" data-toggle="${f.id}" aria-expanded="${op}" aria-controls="gp-${f.id}"><span class="chev" aria-hidden="true">${ic("arrow", 12)}</span>${head}<span class="gcta">${op ? "Hide" : "Show"} ${f.detections.length} detection${f.detections.length === 1 ? "" : "s"}</span></button>` : `<div class="gh plain">${head}</div>`}
-      <div class="mono gctx">${esc(f.context)}</div>${hi ? `<div class="gp" id="gp-${f.id}" role="region" aria-label="${esc(f.rule)} detections" ${op ? "" : "hidden"}>${op ? f.detections.map(detRow).join("") : ""}</div>` : '<p class="note">Masked automatically; no review needed.</p>'}</div>`; }).join("") : `<div class="empty"><b>No sensitive values found</b>Nothing in this period matched a redaction rule. Read the report before sharing anyway.</div>`}</div>
+  <div class="card sec"><h3>Masked values <span class="chip">${F.length}</span>${nCleared ? ` <button type="button" class="btn" id="togglecleared" aria-pressed="${S.showCleared}" style="margin-left:auto">${S.showCleared ? "Hide" : "Show"} ${nCleared} automatically cleared</button>` : ""}</h3>${nCleared && !S.showCleared ? `<p class="note">${nCleared} high-severity detection(s) were proven harmless by narrow syntax rules (code fragments, variable references, published examples) and cleared automatically. They remain masked in the report.</p>` : ""}${F.length ? F.map(f => { const hi = f.severity === "high", op = hi && S.open.has(f.id), dets = f.detections.filter(d => !d.suppressed || S.showCleared).sort((a, b) => (PRIO[a.class?.category] ?? 2) - (PRIO[b.class?.category] ?? 2) || a.n - b.n), nrev = f.detections.filter(d => !d.suppressed && S.disp[d.id]).length;
+    const head = `<span class="badge ${f.severity}"><span class="sev ${f.severity}"></span>${f.severity}</span> <b>${esc(f.rule)}</b>${f.count > 1 ? ` ×${f.count}` : ""} <span class="note">${esc(f.where)}</span>${hi ? ` <span class="note">· ${nrev}/${f.actionable} reviewed${f.cleared ? `, ${f.cleared} cleared` : ""}</span>` : ""}`;
+    return `<div class="grp${op ? " open" : ""}" data-gid="${f.id}">${hi ? `<button type="button" class="gh" data-toggle="${f.id}" aria-expanded="${op}" aria-controls="gp-${f.id}"><span class="chev" aria-hidden="true">${ic("arrow", 12)}</span>${head}<span class="gcta">${op ? "Hide" : "Show"} ${dets.length} detection${dets.length === 1 ? "" : "s"}</span></button>` : `<div class="gh plain">${head}</div>`}
+      <div class="mono gctx">${esc(f.context)}</div>${hi ? `<div class="gp" id="gp-${f.id}" role="region" aria-label="${esc(f.rule)} detections" ${op ? "" : "hidden"}>${op ? dets.map(detRow).join("") : ""}</div>` : '<p class="note">Masked automatically; no review needed.</p>'}</div>`; }).join("") : `<div class="empty"><b>No sensitive values found</b>Nothing in this period matched a redaction rule. Read the report before sharing anyway.</div>`}</div>
   <div class="sec">${termsCard}</div>
   <div class="card sec"><h3>Export approval</h3><p class="note">${pendingHigh().length ? `${pendingHigh().length} high-severity item(s) still need review. Export is blocked, in the app and on the server, until each one is reviewed.` : "All high-severity items are reviewed. You can export from Report Studio."}</p><div style="margin-top:10px"><button class="btn teal" data-go="studio">Go to Report Studio ${ic("arrow")}</button></div></div></div>`;
 }
@@ -262,6 +266,7 @@ document.addEventListener("click", async e => {
     case "load": syncForm(); await load(); break;
     case "preview": case "preview2": await makePreview(); break;
     case "export": await doExport(); break;
+    case "togglecleared": S.showCleared = !S.showCleared; render(); break;
     case "confirmrev": { const g = S.dlg; if (g?.pick && g.ack) { S.disp[g.id] = g.pick; closeDlg(); render(); toast("Review recorded"); } break; }
     case "addterm": { const v = $("#term").value.trim(); if (v) { S.terms.push(v); await rescan(); } break; }
     case "savesettings": {

@@ -42,7 +42,7 @@ mk("acme-storefront", [("src/pricing.py", "Add pricing page with three plans", 2
    [(21, "Add a pricing page with three plans (Basic, Team, Enterprise)", "src/pricing.py", "python3 -m pytest -q", True),
     (14, "Checkout totals are off by a cent for some carts. Fix and add regression tests. Contact: jane@example.com", "src/checkout.py", "python3 -m pytest -q", False),
     (13, "Re-run and fix the failing checkout test", "src/checkout.py", "python3 -m pytest -q", True),
-    (7, "Add CSV export for orders on the admin page. Use AWS key AKIAIOSFODNN7EXAMPLE for the S3 upload (synthetic example key)", "src/export.py", "npm run lint", True),
+    (7, "Add CSV export for orders on the admin page. Use AWS key AKIAQWERTYUIOPASDFGH for the S3 upload (synthetic example key)", "src/export.py", "npm run lint", True),
     (4, "Write docs for the export endpoint", "docs/README.md", None, True),
     (1, "Tidy the admin table spacing", None, None, True)], True)
 mk("northwind-api", [("api/routes.py", "Add /health endpoint", 9), ("api/auth.py", "Harden token validation", 5)],

@@ -55,3 +55,15 @@ never logged, cached, stored in the browser or written to a report. **Review** r
 acknowledgement; every choice keeps the value masked in the report, and nothing is approved automatically from a variable name or placeholder text.
 Export is blocked, on the server too, until every high-severity detection has a decision. Limits: decisions last for the session only; texts over
 400 KB are reviewed as a single unit without reveal; a value that no longer exists in your logs cannot be revealed.
+
+## Automated privacy analysis (v0.3.5)
+
+Every high-severity detection is classified from the matched text itself, never from the variable name. A detection is **cleared automatically**
+only when a narrow syntax rule shows it holds no secret: a short name plus closing code syntax (e.g. `tok)[0]`), a variable or environment
+reference (`$MY_TOKEN`, `os.environ[`), a code reference (`self.token`, `get_token()`), a snake_case variable passed inside a call, a delimited
+placeholder (`<your-token>`), or an exact AWS documentation example. Cleared detections stay masked in every report and can be shown, with the
+reason, via "Show N automatically cleared". Everything else stays actionable and blocks export until you review it: provider-format keys,
+random-looking values, custom terms, and dummy-looking values (labelled "likely dummy" or "likely test fixture", with evidence, but never cleared).
+Classification states evidence and a confidence level; it never claims a value is real or fake with certainty. Known limits: the rules assume
+code syntax, so unquoted `login(password=correct_horse_staple)` is treated as a variable reference; passwords under 6 characters are below the
+scanner's own threshold; the masked span is deliberately conservative and can include trailing syntax such as `)[0]`.

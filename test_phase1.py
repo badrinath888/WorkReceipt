@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import app_core as core, workreceipt as w, workreceipt_app as srv
 
 ENV = dict(os.environ, GIT_AUTHOR_NAME="Demo Dev", GIT_AUTHOR_EMAIL="dev@example.com", GIT_COMMITTER_NAME="Demo Dev", GIT_COMMITTER_EMAIL="dev@example.com")
-AKIA = "AKIAIOSFODNN7EXAMPLE"          # AWS's documented example key (not a credential)
+AKIA = "AKIAQWERTYUIOPASDFGH"          # synthetic key shaped like an AWS key (not a credential)
 GH = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"   # synthetic, matches the pattern only
 TS = "2026-11-10T10:00:00Z"
 

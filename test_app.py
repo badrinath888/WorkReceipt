@@ -29,7 +29,7 @@ class Core(AppBase):
     def test_findings_never_contain_values(self):
         b = core.build({"repo": self.repo})
         blob = json.dumps(core.summary(b))
-        self.assertNotIn("AKIAIOSFODNN7EXAMPLE", blob)
+        self.assertNotIn("AKIAQWERTYUIOPASDFGH", blob)
         self.assertNotIn("jane@example.com", blob)
         self.assertEqual([f["severity"] for f in b["findings"]].count("high"), 1)
 
@@ -43,7 +43,7 @@ class Core(AppBase):
         self.assertFalse(os.path.isdir(self.out) and os.listdir(self.out))
         ids = {d["id"]: "unsure" for f in core.build({"repo": self.repo})["findings"] if f["severity"] == "high" for d in f["detections"]}
         key = core.build({"repo": self.repo})["ctx"]["items"][5]["key"]
-        r = core.export({"repo": self.repo}, ids, {key: "Edited title AKIAIOSFODNN7EXAMPLE"})
+        r = core.export({"repo": self.repo}, ids, {key: "Edited title AKIAQWERTYUIOPASDFGH"})
         self.assertTrue(r["ok"])
         html = open(r["html_path"]).read()
         self.assertIn("Edited title", html); self.assertNotIn("AKIA", html); self.assertNotIn("jane@", html)

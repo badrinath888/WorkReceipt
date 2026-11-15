@@ -38,7 +38,7 @@ with sync_playwright() as p:
     ok("select project + load",'6 work requests' in pg.inner_text("#projects .callout.ok"))
     ok("studio filled in place",pg.locator("#studio [data-req]").count()==6 and pg.locator("#overview").inner_text().count("Needs attention")==1)
     pg.click("#export");pg.wait_for_timeout(1500);ok("export blocked -> scrolls to privacy",pg.evaluate("document.querySelector('.tab[aria-current]')?.dataset.go")=="privacy")
-    ok("raw key not in page","AKIAIOSFODNN7EXAMPLE" not in pg.content())
+    ok("raw key not in page","AKIAQWERTYUIOPASDFGH" not in pg.content())
     pg.click("#addterm",no_wait_after=True) if False else None
     pg.fill("#term","storefront");pg.click("#addterm");pg.wait_for_timeout(900)
     while pg.locator("#privacy button.gh[aria-expanded=false]").count(): pg.locator("#privacy button.gh[aria-expanded=false]").first.click();pg.wait_for_timeout(100)
@@ -53,7 +53,7 @@ with sync_playwright() as p:
     ok("pending badge present before review",pg.locator(".tab .dot").count()>=0 and pg.locator("#privacy .badge.high:text('pending')").count()>=1)
     for _ in range(nrev):
         pg.locator("#privacy [data-review]").filter(has=pg.locator("xpath=self::*")).nth(0).click() if False else None
-        btn=pg.locator("#privacy .det:has(.badge.high) [data-review]").first
+        btn=pg.locator("#privacy .det:has(.badge.high:text('pending')) [data-review]").first
         if btn.count()==0: break
         btn.click();pg.wait_for_selector("#confirmrev")
         ok_dis=pg.locator("#confirmrev").is_disabled();pg.check("input[name=disp][value=unsure]");pg.check("#ack");pg.click("#confirmrev");pg.wait_for_timeout(150)

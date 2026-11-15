@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 import workreceipt as w
 
-VERSION = "0.3.4"
+VERSION = "0.3.5"
 DISPOSITIONS = ("credential", "not_credential", "unsure")     # what the human decided; every choice keeps the value masked in the report
 MAX_ITEMISE = 400_000          # longer texts are reviewed as one group (no per-detection location or reveal)
 REVEAL_MAX = 2000
@@ -238,6 +238,101 @@ def _in_report(final, fs, limit, shown):
     return not (limit and len(first) > limit and pos >= limit - 1)
 
 
+
+# ---------------------------------------------------------------- classification
+# Narrow, syntax-only rules decide what is auto-cleared. They never look at the variable name, and every cleared detection stays
+# masked in the report. Anything ambiguous, random-looking, provider-shaped or unknown is left for a human.
+PUBLISHED_EXAMPLES = {"AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "ASIAIOSFODNN7EXAMPLE"}     # AWS documentation constants
+_CLOSERS = re.compile(r"(?:[)\]]|\[\d{1,3}\])+$")      # closing syntax only; a bracket holding letters is never stripped
+_ENV_REF = re.compile(r"^(?:\$\{[A-Za-z_]\w*\}?|\$[A-Z][A-Z0-9]*_[A-Z0-9_]+|%\(\w+\)s|process\.env\.[A-Za-z_]\w*|os\.environ\[|(?:os\.|System\.)?getenv\(|(?:os\.)?environ\.get\(|ENV\[)$")
+_TEMPLATE = re.compile(r"^<[A-Za-z][A-Za-z0-9 _.-]{0,40}>$")
+_CODE_ATTR = re.compile(r"^(?:self|cls|this|os|config|settings|args|request|params|env|ctx|kwargs|options|opts|conf|cfg)\.[a-z_][a-z0-9_.]*(?:\(\))?$")
+_CODE_CALL = re.compile(r"^[a-z_][a-z0-9_.]*\((?:[a-z_][a-z0-9_.]*)?\)(?:\[\d+\])?$")
+_DUMMY_WORDS = re.compile(r"(?i)dummy|fake|example|sample|placeholder|change[_-]?me|your[_-]|mock|not[_-]?real|redacted|todo|xxxx|(?<![a-z])test")
+_TEST_CTX = re.compile(r"(?i)\btest_\w+\.py|\bpytest\b|\bunittest\b|/tests?/|\btests?/|\bconftest\b")
+SUPPRESSED_CATEGORIES = ("code_fragment", "code_reference", "env_reference", "template_placeholder", "published_example")
+
+
+def _entropy(s):
+    from math import log2
+    return -sum(n / len(s) * log2(n / len(s)) for n in Counter(s).values()) if s else 0.0
+
+
+def _open_calls(left):
+    """Number of call parentheses ('name(') still open at the end of `left` (one line of code before the match). Strings are skipped."""
+    st, q = [], None
+    for i, ch in enumerate(left):
+        if q:
+            q = None if ch == q else q
+        elif ch in "\"'":
+            q = ch
+        elif ch == "(":
+            st.append(bool(re.search(r"[A-Za-z_][\w.]*$", left[:i])))
+        elif ch == ")" and st:
+            st.pop()
+    return sum(st) if q is None else 0
+
+
+_SNAKE = re.compile(r"^[a-z]+(?:_[a-z0-9]+)+$")
+
+
+def _classify(raw, lo, hi, val, rule):
+    """Evidence-based label for one high-severity detection. `suppressed` is True only when a narrow syntactic rule PROVES the
+    matched text holds no secret material; confidence is 'rule-proven' then, otherwise 'likely' or 'low' and a human decides."""
+    def out(cat, label, conf, why, ev, sup=False):
+        return {"category": cat, "label": label, "confidence": conf, "explanation": why, "evidence": ev, "suppressed": sup}
+    if rule == "custom term":
+        return out("custom_term", "Your custom term", "likely", "Matches a term you asked to mask.", ["custom redaction term"])
+    inner = val[1:-1] if len(val) > 1 and val[0] in "\"'" and val[-1] == val[0] else val
+    if inner in PUBLISHED_EXAMPLES:
+        return out("published_example", "Published documentation example", "rule-proven",
+                   "This exact value is a public example from vendor documentation, not a working credential.", ["exact match to a published example value"], True)
+    if rule != "secret assignment":
+        if rule == "unlabeled high-entropy token":
+            return out("unknown", "Random-looking token", "low", "A long random-looking string. It may be an identifier or a credential; the scanner cannot tell.", [f"entropy {_entropy(inner):.1f} bits/char"])
+        return out("known_format", "Matches a credential format", "likely", f"Has the format of a {rule}. Treat as a real credential until you have checked it yourself.", [f"matches the {rule} pattern"])
+    quoted = val[:1] in "\"'"
+    ev = []
+    if not quoted:
+        core = _CLOSERS.sub("", val)
+        if core != val and len(core) < 6:
+            return out("code_fragment", "Code fragment", "rule-proven",
+                       "The match is a short name followed by closing code syntax; the scanner's 6-character minimum was only reached by including the syntax.",
+                       [f"text before the syntax is {len(core)} characters", f"closing syntax is {len(val) - len(core)} characters"], True)
+        left = raw[raw.rfind("\n", 0, lo) + 1:lo]
+        left = re.sub(r"[A-Za-z0-9_.-]*[\"']?\s*[=:]\s*$", "", left)              # drop the key and separator that belong to this match
+        if core != val and _SNAKE.match(core) and 1 <= val.count(")") <= _open_calls(left):
+            return out("code_reference", "Variable passed to a function call", "high",
+                       "A snake_case name followed by the closing of an open call, i.e. a variable reference. This assumes the text is code: if it is not, review it.",
+                       [f"call parenthesis opened earlier on this line", f"name is {len(core)} characters of lower-case words, no quotes"], True)
+        if _ENV_REF.match(val):
+            return out("env_reference", "Reference to an environment variable", "rule-proven", "A lookup of a value stored elsewhere, not the value itself.", ["environment or shell variable reference"], True)
+        if _CODE_ATTR.match(val):
+            return out("code_reference", "Code reference", "rule-proven", "An attribute path on a common code object (for example self.* or config.*), not a literal value.", ["dotted attribute path on a code object"], True)
+        if _CODE_CALL.match(val) and ("_" in val.split("(")[0] or "." in val.split("(")[0]):
+            return out("code_reference", "Function call", "rule-proven", "A call to a lower-case function with identifier arguments, not a literal value.", ["call expression with identifier arguments"], True)
+    elif _TEMPLATE.match(inner) or _ENV_REF.match(inner):
+        return out("template_placeholder", "Template placeholder or variable reference", "rule-proven", "A delimited placeholder or variable reference, not a literal value.", ["delimited placeholder"], True)
+    test_ctx = bool(_TEST_CTX.search(raw))
+    if test_ctx:
+        ev.append("appears in a command that creates or runs test code")
+    words = sorted({m.group(0).lower() for m in _DUMMY_WORDS.finditer(inner)})
+    if words:
+        ev.append("contains " + ", ".join(f"'{x}'" for x in words))
+    if len(inner) >= 6 and len(set(inner)) <= 2:
+        ev.append("repeated characters")
+    if len(inner) >= 12 and _entropy(inner) >= 3.5 and not words:
+        ev.append(f"random-looking ({_entropy(inner):.1f} bits/char)")
+    dummyish = bool(words) or (len(inner) >= 6 and len(set(inner)) <= 2)
+    if dummyish and test_ctx:
+        return out("test_fixture", "Likely test fixture", "likely", "Dummy-looking value inside test code. It is not cleared automatically, because a dummy-looking word is not proof the value is fake.", ev)
+    if dummyish:
+        return out("likely_dummy", "Likely dummy value", "low", "The value looks like a placeholder, but nothing proves it. Check it yourself.", ev)
+    if any(e.startswith("random-looking") for e in ev):
+        return out("looks_real", "Looks like a real secret", "likely", "Random-looking value assigned to a secret-like name. Treat as real until you have checked.", ev)
+    return out("unknown", "Unclassified", "low", "Could not tell whether this is a credential. Check it yourself.", ev)
+
+
 def _findings(section, idx, raw, terms, label, at="", limit=None, shown=True):
     """Mask `raw`; return (masked text, findings, values). A finding is one (rule, severity) group in one place; each high-severity
     one carries its individual detections. `values` maps detection id -> original value for the explicit reveal action only;
@@ -280,6 +375,9 @@ def _findings(section, idx, raw, terms, label, at="", limit=None, shown=True):
                        "context": _context(final, d["fs"], d["fe"]) if d["fs"] is not None else [],
                        "in_report": _in_report(final, d["fs"], limit, shown) if d["fs"] is not None else None,
                        "also": [x for x in kids if x != key[0]]}
+                if key[1] == "high":
+                    det["class"] = _classify(raw, lo, d["hi"], val, key[0])
+                    det["suppressed"] = det["class"]["suppressed"]
                 if d["parent"] is not None:
                     det["inside"] = dets[d["root"]]["rule"]
                 f["detections"].append(det)
@@ -294,8 +392,13 @@ def _findings(section, idx, raw, terms, label, at="", limit=None, shown=True):
             if key[1] == "high":          # too large (or not reproducible) to itemise: reviewed as one unit, no reveal possible
                 f["detections"].append({"id": _hid("d", section, idx, key[0], "group", raw[:4096]), "n": 1, "of": 1, "rule": key[0], "severity": "high",
                                         "section": section, "where": label, "at": at, "line": None, "col": None, "lines": None, "length": None,
-                                        "vsig": "", "context": [], "in_report": None, "also": [], "unitemised": n})
+                                        "vsig": "", "context": [], "in_report": None, "also": [], "unitemised": n, "suppressed": False,
+                                        "class": {"category": "unknown", "label": "Too large to classify", "confidence": "low", "suppressed": False,
+                                                  "explanation": "Text too large to analyse per detection; review as a whole.", "evidence": []}})
             groups[key] = f
+    for f in groups.values():
+        f["cleared"] = sum(1 for d in f["detections"] if d.get("suppressed"))
+        f["actionable"] = len(f["detections"]) - f["cleared"] if f["severity"] == "high" else 0
     return masked, sorted(groups.values(), key=lambda f: ("high", "medium", "low").index(f["severity"])), values
 
 
@@ -416,7 +519,7 @@ def export(opts, approved, title_edits, settings=None):
     """Write the HTML report. High-severity findings must each be approved by the human first (enforced here, not only in the UI)."""
     s = settings or load_settings()
     b = build(opts, s)
-    high = [d["id"] for f in b["findings"] if f["severity"] == "high" for d in f["detections"]]
+    high = [d["id"] for f in b["findings"] if f["severity"] == "high" for d in f["detections"] if not d.get("suppressed")]
     rev = approved if isinstance(approved, dict) else {}
     missing = [i for i in high if rev.get(i) not in DISPOSITIONS]
     if missing:
