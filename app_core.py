@@ -343,7 +343,14 @@ def _in_report(final, fs, limit, shown):
 PUBLISHED_EXAMPLES = {"AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "ASIAIOSFODNN7EXAMPLE"}     # AWS documentation constants
 _CLOSERS = re.compile(r"(?:[)\]]|\[\d{1,3}\])+$")      # closing syntax only; a bracket holding letters is never stripped
 _ENV_REF = re.compile(r"^(?:\$\{[A-Za-z_]\w*\}?|\$[A-Z][A-Z0-9]*_[A-Z0-9_]+|%\(\w+\)s|process\.env\.[A-Za-z_]\w*|os\.environ\[|(?:os\.|System\.)?getenv\(|(?:os\.)?environ\.get\(|ENV\[)$")
-_TEMPLATE = re.compile(r"^<[A-Za-z][A-Za-z0-9 _.-]{0,40}>$")
+_TEMPLATE = re.compile(r"^<[A-Za-z][A-Za-z _.-]{0,40}>$")
+_PLACEHOLDER_WORDS = {"your", "my", "the", "a", "an", "api", "key", "token", "secret", "password", "pass", "pwd", "passphrase", "value", "here", "string",
+                      "credential", "credentials", "id", "name", "user", "username", "access", "auth", "private", "client", "bearer", "insert", "enter", "goes", "placeholder"}
+
+
+def _is_placeholder(inner):
+    """`<your_api_key>`-style only: every word must be placeholder vocabulary. `<Tr0ub4dor3>` or `<correcthorse>` are real-looking values."""
+    return bool(_TEMPLATE.match(inner)) and all(x in _PLACEHOLDER_WORDS for x in re.split(r"[ _.-]+", inner[1:-1].lower()) if x)
 _CODE_ATTR = re.compile(r"^(?:self|cls|this|os|config|settings|args|request|params|env|ctx|kwargs|options|opts|conf|cfg)\.[a-z_][a-z0-9_.]*(?:\(\))?$")
 _CODE_CALL = re.compile(r"^[a-z_][a-z0-9_.]*\((?:[a-z_][a-z0-9_.]*)?\)(?:\[\d+\])?$")
 _DUMMY_WORDS = re.compile(r"(?i)dummy|fake|example|sample|placeholder|change[_-]?me|your[_-]|mock|not[_-]?real|redacted|todo|xxxx|(?<![a-z])test")
@@ -400,16 +407,15 @@ def _classify(raw, lo, hi, val, rule):
         left = raw[raw.rfind("\n", 0, lo) + 1:lo]
         left = re.sub(r"[A-Za-z0-9_.-]*[\"']?\s*[=:]\s*$", "", left)              # drop the key and separator that belong to this match
         if core != val and _SNAKE.match(core) and 1 <= val.count(")") <= _open_calls(left):
-            return out("code_reference", "Variable passed to a function call", "high",
-                       "A snake_case name followed by the closing of an open call, i.e. a variable reference. This assumes the text is code: if it is not, review it.",
-                       [f"call parenthesis opened earlier on this line", f"name is {len(core)} characters of lower-case words, no quotes"], True)
+            # M5: this shape ALSO fits a real unquoted passphrase, e.g. login(password=correct_horse_staple). Advisory only; a human decides.
+            return out("code_reference", "Looks like a variable passed to a function", "low",
+                       "A snake_case name followed by a closing parenthesis. It may be a variable name, but a real unquoted password has the same shape. Not cleared automatically: check it yourself.",
+                       ["call parenthesis opened earlier on this line", f"{len(core)} characters of lower-case words, no quotes"])
         if _ENV_REF.match(val):
             return out("env_reference", "Reference to an environment variable", "rule-proven", "A lookup of a value stored elsewhere, not the value itself.", ["environment or shell variable reference"], True)
-        if _CODE_ATTR.match(val):
-            return out("code_reference", "Code reference", "rule-proven", "An attribute path on a common code object (for example self.* or config.*), not a literal value.", ["dotted attribute path on a code object"], True)
-        if _CODE_CALL.match(val) and ("_" in val.split("(")[0] or "." in val.split("(")[0]):
-            return out("code_reference", "Function call", "rule-proven", "A call to a lower-case function with identifier arguments, not a literal value.", ["call expression with identifier arguments"], True)
-    elif _TEMPLATE.match(inner) or _ENV_REF.match(inner):
+        if _CODE_ATTR.match(val) or (_CODE_CALL.match(val) and ("_" in val.split("(")[0] or "." in val.split("(")[0])):
+            ev.append("looks like a code reference (attribute path or call); a literal value can look the same")
+    elif _is_placeholder(inner) or _ENV_REF.match(inner):
         return out("template_placeholder", "Template placeholder or variable reference", "rule-proven", "A delimited placeholder or variable reference, not a literal value.", ["delimited placeholder"], True)
     test_ctx = bool(_TEST_CTX.search(raw))
     if test_ctx:

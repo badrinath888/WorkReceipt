@@ -7,7 +7,14 @@ Baseline: v0.3.5 (30af059). Spec: desktop product build (M1–M8).
 - M2+M3: sidebar desktop UI (Overview, Projects, Report Studio, Privacy Center, Reports, Settings) replacing the scrolling page; state (project, edits, reviews, preview) lives in one JS object and survives navigation. First-run onboarding (3 steps, demo project or native folder pick). Native folder picker via window.pywebview.api (typed-path fallback in browsers); drag-drop of folders (needs pywebviewFullPath, webview only); add/remove/refresh projects (remove only hides, never deletes); missing-folder handling; Reports library (search, date filter, open, show in Finder, delete with confirm); Settings (appearance, folder pickers, author, privacy/storage info, manual-update workflow). Backend: core.all_projects/add_project/remove_project/enable_demo/delete_report + /api/project/*, /api/demo, /api/report/delete. Export gate unchanged and re-verified in e2e.
 - Tests: test_e2e_desktop.py (Playwright + Chrome, synthetic data; pywebview bridge is a JS stub).
 
-## Next (M4/M5)
+- M5 (privacy hardening): FIXED unsafe auto-clear. Vulnerabilities: (1) snake_case value + closing paren (`login(password=correct_horse_staple)`) cleared as "variable passed to a function"; (2) attribute paths (`config.x`, `self.x`) and (3) calls with arguments (`get_x(secret)`) cleared as code references; (4) quoted `<Tr0ub4dor3>` cleared as template placeholder. Detection gaps: `--password VALUE`/`--token VALUE`, `curl -u user:pass` were not masked at all; `passphrase` keyword missing. Fixes: (1)-(3) now never auto-clear (low-confidence, human review); placeholders only when every word is placeholder vocabulary; new rules "secret option" and "curl user:password" (high); `passphrase` keyword. Still auto-cleared (narrow): published vendor example constants, env-var references (`${X}`, `$UPPER_SNAKE`, process.env.X, os.environ[), `<your_api_key>`-style placeholders, <6-char name + closing syntax (below scanner minimum). Cleared values stay masked in every export.
+- Tests: test_m5_security.py (kwarg/attr/call/JSON/shell/YAML/fixture cases, hostile + 600 KB records, approval invalidation on changed value, forged dispositions, no leakage in API/errors/data folder, CLI vs preview vs export). test_classify.py updated: `secret_key)[1]` now needs review (3 of 4 bridge fragments still cleared).
+
+## Next (M4/M6)
+- M4: report metadata audit, PDF without Chrome (WKWebView createPDF). M6: packaging on a Mac.
+- Residual privacy risks: `$UPPER_SNAKE` literal password would be auto-cleared (still masked); passwords shorter than scanner minimum are not detected; secrets without a keyword/known format/entropy are not detected; `-p value` flags not covered; classification is advisory and cannot read intent.
+
+## (older) Next (M4/M5)
 - M4: report metadata audit (no secrets), safe file naming review, PDF without Chrome (WKWebView createPDF) -> M6.
 - M5 (do first): classifier audit — unquoted credential vs code-variable reference auto-clear (test_classify.py).
 - Known gaps: log-dir override is global (Settings), not per project; Dock/menu bar items and app icon not done; keyboard shortcuts not added.

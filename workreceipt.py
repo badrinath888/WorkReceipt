@@ -26,8 +26,11 @@ RULES = [
     ("npm token", "high", re.compile(r"\bnpm_[A-Za-z0-9]{30,}\b"), "[REDACTED:npm-token]"),
     ("Basic auth", "high", re.compile(r"(?i)\b(basic)\s+[A-Za-z0-9+/=]{16,}"), r"\1 [REDACTED:token]"),
     ("secret assignment", "high", re.compile(
-        r"(?i)(?<![A-Z0-9_.-])([\"']?\b[A-Z0-9_.-]*(?:password|passwd|pwd|secret|token|api[_-]?key|private[_-]?key|credential|auth[_-]?key)[A-Z0-9_.-]*[\"']?)"
+        r"(?i)(?<![A-Z0-9_.-])([\"']?\b[A-Z0-9_.-]*(?:password|passwd|passphrase|pwd|secret|token|api[_-]?key|private[_-]?key|credential|auth[_-]?key)[A-Z0-9_.-]*[\"']?)"
         r"(\s*[=:]\s*)(?:\"[^\"\n]{4,}\"|'[^'\n]{4,}'|[^\s'\",;}]{6,})"), r"\1\2[REDACTED:secret]"),
+    # Space-separated CLI secrets: `--password hunter2xyz`, `curl -u user:pass`. (Added in M5: previously not masked at all.)
+    ("secret option", "high", re.compile(r"(?i)(?<![\w-])(--?(?:password|passwd|passphrase|token|secret|api[_-]?key|auth[_-]?token|access[_-]?token)\s+)(?![-$<])(?:\"[^\"\n]{4,}\"|'[^'\n]{4,}'|[^\s'\"]{4,})"), r"\1[REDACTED:secret]"),
+    ("curl user:password", "high", re.compile(r"(?<![\w-])((?:-u|--user)[ =]+)(?![-$<])(?:\"[^\"\s:]+:[^\"\n]{3,}\"|'[^'\s:]+:[^'\n]{3,}'|[^\s:'\"]+:[^\s'\"]{3,})"), r"\1[REDACTED:creds]"),
     ("email", "medium", re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"), "[REDACTED:email]"),
     ("home path", "low", re.compile(r"(?:/Users|/home)/[^/\s'\"]+"), "~"),
     ("IPv4 address", "low", re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), "[REDACTED:ip]"),

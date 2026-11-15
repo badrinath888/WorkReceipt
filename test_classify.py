@@ -24,17 +24,19 @@ class RootCause(unittest.TestCase):
         self.assertEqual(list(vals.values()), ["tok)[0]"])             # the exact fragment the user saw: kwarg value plus closing syntax
         self.assertEqual(dets[0]["class"]["category"], "code_fragment")
 
-    def test_bridge_example_is_cleared_and_report_still_masks(self):
+    def test_bridge_example_clears_only_short_fragments_and_report_still_masks(self):
+        # M5: `secret_key)[1]` has the same shape as a real unquoted passphrase, so it needs review; tok)/pw) are below the scanner minimum.
         dets, vals, _ = cls(BRIDGE)
         self.assertEqual(len(dets), 4)
-        self.assertTrue(all(d["suppressed"] for d in dets), [d["class"]["category"] for d in dets])
-        self.assertTrue(all(d["class"]["confidence"] in ("rule-proven", "high") and d["class"]["evidence"] for d in dets))
+        self.assertEqual(sorted(d["suppressed"] for d in dets), [False, True, True, True], [d["class"]["category"] for d in dets])
+        self.assertTrue(all(d["class"]["confidence"] == "rule-proven" and d["class"]["evidence"] for d in dets if d["suppressed"]))
         ws = WS(); self.addCleanup(ws.done)
         ws.log(ws.bash("c1", BRIDGE, result="ok", err=False))
         b = ws.build()
         g = [f for f in b["findings"] if f["rule"] == "secret assignment"][0]
-        self.assertEqual((g["count"], g["actionable"], g["cleared"]), (4, 0, 4))
-        r = core.export({"repo": ws.repo}, {}, {})                      # nothing left for a human: export is allowed
+        self.assertEqual((g["count"], g["actionable"], g["cleared"]), (4, 1, 3))
+        self.assertFalse(core.export({"repo": ws.repo}, {}, {})["ok"])
+        r = core.export({"repo": ws.repo}, {d["id"]: "not_credential" for f in b["findings"] for d in f["detections"] if not d["suppressed"] and f["severity"] == "high"}, {})
         self.assertTrue(r["ok"])
         self.assertNotIn("tok)[0]", r["html"]); self.assertNotIn("pw)[0]", r["html"])      # still masked, nothing unmasked by clearing
 
@@ -62,7 +64,7 @@ class GenuineSecretsStillBlock(unittest.TestCase):
     def test_mixed_group_clears_only_the_harmless_ones(self):
         b = self.blocked(BRIDGE + f"\npython -c \"login(password={REAL_U})[0]\"")
         g = [f for f in b["findings"] if f["rule"] == "secret assignment"][0]
-        self.assertEqual((g["count"], g["cleared"], g["actionable"]), (5, 4, 1))
+        self.assertEqual((g["count"], g["cleared"], g["actionable"]), (5, 3, 2))
 
     def test_hostile_values_are_not_cleared(self):
         for t in ("password=s3cr3t)[0]", "password=hunter2)", "token=abc[Xk9mQ2vL7pR4zT]", "password=Passw0rd(1)", "token = mytoken123.xyz",
