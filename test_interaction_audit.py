@@ -79,7 +79,7 @@ class Audit(unittest.TestCase):
         self.chk(S, "Add project (cancel)", "no change, no error", "addproj", "/api/native/pick_folder", lambda: (pg.wait_for_selector("#addproj:not([disabled])"), pg.click("#addproj"), pg.wait_for_timeout(300), self.assertEqual(self.errs, [])))
         self.chk(S, "Refresh", "toast confirms", "refresh", "/api/state", lambda: (pg.click("#refresh"), pg.wait_for_selector("#toast.on:has-text('refreshed')")))
         self.chk(S, "Generate report w/o project", "routes to Projects with hint", "genreport", "-", lambda: (pg.click("#genreport"), pg.wait_for_selector("#toast.on:has-text('Select a project')"), self.assertIn("Projects", pg.inner_text(".tab[aria-current=page]"))))
-        self.load_demo(pg, "?shell=desktop"); self.review_all(pg); pg.click(".tab[data-go=studio]"); pg.click("#export"); pg.wait_for_selector(".xcard.ok:has-text('Exported')", timeout=60000)
+        self.load_demo(pg, "?shell=desktop"); self.review_all(pg); pg.click(".tab[data-go=studio]"); pg.click("#mode-private"); pg.click("#export"); pg.wait_for_selector(".xcard.ok:has-text('Exported')", timeout=60000)
         pg.click(".tab[data-go=overview]")
         self.chk(S, "Stats + recent reports", "counts and a recent row render", "vOverview", "/api/state", lambda: (self.assertIn("acme-storefront", pg.inner_text("#screen")), self.assertTrue(pg.locator(".stat").count() >= 3)))
         n = FakeNative(); import workreceipt_app as app; app.NATIVE = n
@@ -124,9 +124,9 @@ class Audit(unittest.TestCase):
     # ---------------- studio / privacy ----------------
     def test_studio_and_privacy(self):
         S = "Report Studio"; self.native(); pg = self.page(); self.load_demo(pg, "?shell=desktop")
-        pg.click(".tab[data-go=studio]"); pg.wait_for_selector("[data-req]")
+        pg.click(".tab[data-go=studio]"); pg.click("#mode-private"); pg.wait_for_selector("[data-req]")
         def edit():
-            pg.click("[data-req]"); pg.keyboard.press("End"); pg.keyboard.type(" EDITED"); pg.click(".tab[data-go=reports]"); pg.click(".tab[data-go=studio]")
+            pg.click("[data-req]"); pg.keyboard.press("End"); pg.keyboard.type(" EDITED"); pg.click(".tab[data-go=reports]"); pg.click(".tab[data-go=studio]"); pg.click("#mode-private")
             self.assertIn("EDITED", pg.inner_text("[data-req]"))
         self.chk(S, "Edit request titles", "edit retained across tabs", "input[data-req]", "-", edit)
         self.chk(S, "Export blocked until review (UI)", "toast + routes to Privacy Center", "doExport", "/api/export", lambda: (pg.click("#export"), pg.wait_for_selector(".tab[data-go=privacy][aria-current=page]")))
@@ -151,7 +151,7 @@ class Audit(unittest.TestCase):
         self.chk(P, "Server-side export block", "export without approvals refused", "core.export", "/api/export", server_block, level="backend")
         self.review_all(pg)
         self.chk(P, "Approval counter", "shows Clear / all reviewed", "vPrivacy", "-", lambda: self.assertTrue("Clear" in pg.inner_text("#screen") or "reviewed" in pg.inner_text("#screen")))
-        pg.click(".tab[data-go=studio]")
+        pg.click(".tab[data-go=studio]"); pg.click("#mode-private")
         def prev():
             pg.click("#preview"); pg.wait_for_selector("iframe.frame"); self.assertEqual(pg.evaluate("document.querySelector('iframe.frame').contentWindow.scrollY"), 0)
         self.chk(S, "Preview (opens at top)", "iframe rendered, scroll 0", "makePreview", "/api/render", prev)
@@ -164,7 +164,7 @@ class Audit(unittest.TestCase):
     def test_reports(self):
         S = "Reports"; n = self.native(); pg = self.page(); self.core.save_settings({"onboarded": True}); pg.goto(self.url + "?shell=desktop#reports"); pg.wait_for_selector("#screen")
         if not self.core.history():
-            self.load_demo(pg, "?shell=desktop"); self.review_all(pg); pg.click(".tab[data-go=studio]"); pg.click("#export"); pg.wait_for_selector(".xcard.ok:has-text('Exported')", timeout=60000)
+            self.load_demo(pg, "?shell=desktop"); self.review_all(pg); pg.click(".tab[data-go=studio]"); pg.click("#mode-private"); pg.click("#export"); pg.wait_for_selector(".xcard.ok:has-text('Exported')", timeout=60000)
         pg.click(".tab[data-go=reports]"); pg.wait_for_selector("tr:has-text('acme-storefront')")
         self.chk(S, "Search", "filters, empty-match message", "input#rq", "-", lambda: (pg.fill("#rq", "zzz"), self.assertIn("No reports match", pg.inner_text("#screen")), pg.fill("#rq", "acme"), self.assertIn("acme-storefront", pg.inner_text("#screen"))))
         self.chk(S, "Date filters", "future From hides rows; cleared shows", "input#rf/#rt", "-", lambda: (pg.fill("#rf", "2099-01-01"), self.assertIn("No reports match", pg.inner_text("#screen")), pg.fill("#rf", ""), pg.fill("#rt", "2000-01-01"), self.assertIn("No reports match", pg.inner_text("#screen")), pg.fill("#rt", "")))

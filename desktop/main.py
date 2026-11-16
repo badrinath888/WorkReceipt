@@ -144,6 +144,7 @@ def main():
     if sys.platform == "darwin":
         from desktop import pdf_mac
         core.PDF_BACKEND = pdf_mac.render_pdf        # packaged PDF export: system WebKit, no Chrome required
+        core.PDF_INSPECTOR = pdf_mac.extract_facts    # Client-Safe Mode: PDFKit reads the finished PDF back before it is shared
     srv, url = start_server()
     atexit.register(lambda: stop_server(srv))
     nat = Native()

@@ -123,6 +123,24 @@ def inspect_pdf(path):
     return d
 
 
+def extract_facts(path):
+    """Facts for Client-Safe Mode's final PDF check, read with PDFKit: extractable text, document metadata, annotation count.
+    Returns None when PDFKit cannot read the file; the caller then treats the PDF as UNVERIFIED and blocks the export."""
+    try:
+        from Quartz import PDFDocument
+        doc = PDFDocument.alloc().initWithURL_(_url(path))
+        if doc is None or doc.pageCount() < 1:
+            return None
+        attrs = doc.documentAttributes() or {}
+        meta = {k: str(attrs.get(k) or "") for k in ("Title", "Author", "Subject", "Keywords", "Creator", "Producer")}
+        notes = sum(len(doc.pageAtIndex_(i).annotations() or []) for i in range(int(doc.pageCount())))
+        with open(path, "rb") as f:
+            raw = f.read()
+        return {"text": str(doc.string() or ""), "meta": meta, "annotations": notes, "attachments": raw.count(b"/EmbeddedFile")}
+    except Exception:                                                # noqa: BLE001
+        return None
+
+
 def _write_diag(d):
     """<app data>/pdf-last-diag.txt: counts and flags only."""
     try:

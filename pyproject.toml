@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "workreceipt"
-version = "0.5.1"
+version = "0.6.0"
 description = "Client-safe work report from Claude Code sessions + git. Local only."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -15,4 +15,4 @@ workreceipt = "workreceipt:main"
 workreceipt-app = "workreceipt_app:main"
 
 [tool.setuptools]
-py-modules = ["workreceipt", "app_core", "workreceipt_app"]
+py-modules = ["workreceipt", "app_core", "workreceipt_app", "client_safe"]

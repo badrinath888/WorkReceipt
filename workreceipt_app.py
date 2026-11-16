@@ -122,6 +122,14 @@ class H(BaseHTTPRequestHandler):
                 r = core.export(data, data.get("approved"), data.get("titles"))
                 r.pop("html", None)
                 return self._json(200 if r.get("ok") else 409, r)
+            if self.path == "/api/client/preview":
+                return self._json(200, core.client_preview(data, data.get("draft"), data.get("approved")))
+            if self.path == "/api/client/approve":
+                r = core.client_approve(data, data.get("draft"), data.get("approved"), data.get("confirm"))
+                return self._json(200 if r.get("ok") else 409, r)
+            if self.path == "/api/client/export":
+                r = core.client_export(data, data.get("draft"), data.get("approved"), data.get("token"), bool(data.get("pdf")))
+                return self._json(200 if r.get("ok") else 409, r)
             if self.path == "/api/reveal":
                 # Local-only, one value, only on an explicit confirmed request. Never cached, never logged.
                 if data.get("confirm") is not True:

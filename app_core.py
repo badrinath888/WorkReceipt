@@ -4,9 +4,10 @@ import hashlib, hmac, json, os, pathlib, re, secrets, shutil, subprocess, sys, t
 from collections import Counter
 from datetime import datetime, timedelta
 
+import client_safe as cs
 import workreceipt as w
 
-VERSION = "0.5.1"
+VERSION = "0.6.0"
 DISPOSITIONS = ("credential", "not_credential", "unsure")     # what the human decided; every choice keeps the value masked in the report
 MAX_ITEMISE = 400_000          # longer texts are reviewed as one group (no per-detection location or reveal)
 REVEAL_MAX = 2000
@@ -30,7 +31,7 @@ else:
 DEFAULTS = {"claude_dir": os.environ.get("WORKRECEIPT_CLAUDE_DIR", os.path.expanduser("~/.claude")),
             "out_dir": DEFAULT_OUT,
             "author": "", "client": "", "theme": "system", "redact_terms": [],
-            "projects": [], "hidden": [], "onboarded": False, "demo": False}
+            "projects": [], "hidden": [], "onboarded": False, "demo": False, "settings_version": 2}
 
 
 def _home():
@@ -73,11 +74,18 @@ def save_settings(new):
 
 
 def history():
+    """Exported-report records. Records written before Client-Safe Mode have no `mode`; they are developer reports (private) and are
+    NEVER presented as client-approved. Normalised on read only; the file on disk is left as it was."""
     try:
         with open(os.path.join(_home(), "history.json"), encoding="utf-8") as f:
-            return json.load(f)
+            h = json.load(f)
     except (OSError, ValueError):
         return []
+    h = [r for r in h if isinstance(r, dict)] if isinstance(h, list) else []
+    for r in h:
+        if r.get("mode") != "client":
+            r["mode"] = "developer"
+    return h
 
 
 def _add_history(rec):
@@ -669,6 +677,7 @@ def export(opts, approved, title_edits, settings=None):
     terms = _terms(s, opts)
     ctx = b["ctx"]
     applied, dropped = _apply_titles(ctx, title_edits, terms)
+    ctx["private"] = True                                  # Developer View output: marked PRIVATE inside the file as well
     html = w.render(ctx)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     base = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in ctx["project"])[:40] or "report"
@@ -687,9 +696,148 @@ def export(opts, approved, title_edits, settings=None):
         pdf = to_pdf(path)
     _add_history({"project": ctx["project"], "repo": os.path.abspath(opts["repo"]), "period": ctx["period"], "html": path, "pdf": pdf,
                   "client": (opts.get("client") or "")[:80], "at": datetime.now().strftime("%Y-%m-%d %H:%M"), "requests": ctx["n_items"], "commits": ctx["n_commits"],
-                  "checks": len(ctx["checks"]), "high_reviewed": len(high)})
+                  "checks": len(ctx["checks"]), "high_reviewed": len(high), "mode": "developer"})
     return {"ok": True, "html_path": path, "pdf_path": pdf, "html_name": os.path.basename(path), "pdf_name": os.path.basename(pdf) if pdf else "", "pdf_failed": bool(opts.get("pdf")) and not pdf, "pdf_error": LAST_PDF_ERROR if (opts.get("pdf") and not pdf) else "", "high_reviewed": len(high), "edits_applied": applied,
             "edits_dropped": dropped, "html": html}
+
+
+# ---------- Client-Safe Mode ----------
+# Separate pipeline: the client report is built only from the allowlisted model in client_safe.py. Nothing here passes developer
+# report text (prompts, commit messages, commands, paths) into it; private evidence contributes counts and a set of commit ids
+# used to VERIFY the developer's own evidence links, never to fill content.
+PDF_INSPECTOR = None      # set by the desktop shell on macOS (PDFKit); default is poppler/pypdf where available. None result => export blocked
+
+
+def _client_state(opts, draft, approved, s):
+    b = build(opts, s)
+    since, until = _dates(opts.get("since") or "", opts.get("until") or "")
+    period = cs.period_label(since.strftime("%Y-%m-%d") if since else "", (until - timedelta(days=1)).strftime("%Y-%m-%d") if until else "")
+    checks = b["ctx"]["checks"]
+    evidence = {"commits": {c[0] for c in b["ctx"]["commits"]}, "checks_total": len(checks), "checks_ok": sum(1 for c in checks if c["ok"] is True)}
+    terms = _terms(s, opts)
+    report, issues, ignored = cs.build_report(draft, evidence, period, terms)
+    rev = approved if isinstance(approved, dict) else {}
+    high = [d["id"] for f in b["findings"] if f["severity"] == "high" for d in f["detections"] if not d.get("suppressed")]
+    pending = [i for i in high if rev.get(i) not in DISPOSITIONS]
+    fp = cs.findings_fingerprint((i, rev.get(i) if rev.get(i) in DISPOSITIONS else "") for i in high)
+    scope = {"repo": os.path.realpath(opts["repo"]), "period": period, "findings": fp}
+    return {"report": report, "issues": issues, "ignored": ignored, "pending": pending, "scope": scope, "terms": terms, "high": len(high)}
+
+
+def _manifest(r):
+    rows = [("Project name", r.project_name)] + ([("Client name", r.client_name)] if r.client_name else []) + [("Reporting period", r.period)]
+    rows += [("Prepared by", r.prepared_by)] if r.prepared_by else []
+    rows += [("Report date", r.report_date), ("Work items", f"{len(r.items)} approved item(s)"),
+             ("Verification", {"none": "No verification statement", "auto": f"Counts only: {r.verification.checks_ok} of {r.verification.checks_total} checks without a reported error",
+                               "custom": "Your own wording"}[r.verification.mode])]
+    return [{"label": a, "value": v} for a, v in rows]
+
+
+def _blocked(reason, codes=()):
+    why = "; ".join(sorted({cs.FAILURE_TEXT.get(c, "an unexpected problem") for c in codes}))
+    msg = {"validation": "Final checks of the report file failed" + (f" ({why})" if why else "") + ". Nothing was saved or shared.",
+           "approval": "This content has changed since you approved it, or the approval is missing or expired. Review and approve it again.",
+           "issues": "The client report has problems to fix before it can be shared.",
+           "findings": "High-severity privacy findings still need your review."}[reason]
+    return {"ok": False, "error": "client_blocked", "reason": reason, "message": msg, "failed": sorted(codes)}
+
+
+def client_preview(opts, draft, approved, settings=None):
+    """Exact client artifact for on-screen preview. Nothing is written to disk. If the draft has problems, NO html is returned."""
+    st = _client_state(opts, draft, approved, settings or load_settings())
+    out = {"ok": not st["issues"], "issues": st["issues"], "pending_findings": len(st["pending"]), "ignored": st["ignored"], "excluded": list(cs.EXCLUDED),
+           "html": None, "content_hash": None, "manifest": []}
+    r = st["report"]
+    if r is not None:
+        html = cs.render_client(r)
+        fails = cs.validate_html(html, r, st["terms"])
+        if fails:
+            out.update(ok=False, validation=fails, message=_blocked("validation", fails)["message"])
+        else:
+            out.update(html=html, content_hash=cs.content_hash(r, st["scope"]), manifest=_manifest(r))
+    return out
+
+
+def client_approve(opts, draft, approved, confirm, settings=None):
+    """Scoped approval of the complete client-facing content. Needs an explicit confirmation naming the exact content hash the person was shown."""
+    if not (isinstance(confirm, dict) and confirm.get("privacy_review") is True and isinstance(confirm.get("content_hash"), str)):
+        return {"ok": False, "error": "confirmation_required", "message": "Confirm that you reviewed the preview."}
+    st = _client_state(opts, draft, approved, settings or load_settings())
+    r = st["report"]
+    if st["issues"] or r is None:
+        return dict(_blocked("issues"), issues=st["issues"])
+    if st["pending"]:
+        return dict(_blocked("findings"), missing=st["pending"])
+    html = cs.render_client(r)
+    fails = cs.validate_html(html, r, st["terms"])
+    if fails:
+        return _blocked("validation", fails)
+    ch = cs.content_hash(r, st["scope"])
+    if not hmac.compare_digest(ch, confirm["content_hash"]):
+        return _blocked("approval")
+    return {"ok": True, "token": cs.approval_token(ch), "content_hash": ch}
+
+
+def client_export(opts, draft, approved, token, want_pdf, settings=None):
+    """Writes the client HTML (and PDF) only if: findings reviewed, content valid, approval token matches THIS content, and the final files
+    pass the artifact checks. Files are built in a private temp folder first; on any failure nothing reaches the reports folder."""
+    s = settings or load_settings()
+    st = _client_state(opts, draft, approved, s)
+    r = st["report"]
+    if st["issues"] or r is None:
+        return dict(_blocked("issues"), issues=st["issues"])
+    if st["pending"]:
+        return dict(_blocked("findings"), missing=st["pending"])
+    ch = cs.content_hash(r, st["scope"])
+    if not cs.token_valid(token, ch):
+        return _blocked("approval")
+    html = cs.render_client(r)
+    fails = cs.validate_html(html, r, st["terms"])
+    if fails:
+        return _blocked("validation", fails)
+    base = cs.safe_basename(r.project_name, st["terms"])
+    tmp = tempfile.mkdtemp(prefix="wr-client-")
+    try:
+        sh, spdf = os.path.join(tmp, "report.html"), None
+        with open(sh, "w", encoding="utf-8", newline="") as f:
+            f.write(html)
+        with open(sh, encoding="utf-8", newline="") as f:
+            back = f.read()
+        fails = cs.validate_html(back, r, st["terms"])
+        if fails:
+            return _blocked("validation", fails)
+        pdf_err = ""
+        if want_pdf:
+            spdf = to_pdf(sh)
+            if not spdf:
+                pdf_err = LAST_PDF_ERROR
+            else:
+                facts = (PDF_INSPECTOR or cs.pdf_facts_cli)(spdf)
+                fails = cs.validate_pdf(spdf, r, back, facts, st["terms"])
+                if fails:
+                    return _blocked("validation", fails)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        try:
+            os.makedirs(s["out_dir"], exist_ok=True)
+            path, n = os.path.join(s["out_dir"], f"{base}-{stamp}.html"), 1
+            while os.path.exists(path) or os.path.exists(path[:-5] + ".pdf"):
+                n += 1
+                path = os.path.join(s["out_dir"], f"{base}-{stamp}-{n}.html")
+            with open(path, "x", encoding="utf-8", newline="") as f:
+                f.write(back)
+            pdf = None
+            if spdf:
+                pdf = path[:-5] + ".pdf"
+                shutil.copyfile(spdf, pdf)
+        except OSError as ex:
+            raise UserError(f"Cannot save to the reports folder ({s['out_dir']}): {ex.strerror or 'error'}. Choose another folder in Settings")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    _add_history({"project": r.project_name, "repo": os.path.abspath(opts["repo"]), "period": r.period, "html": path, "pdf": pdf, "client": r.client_name,
+                  "at": datetime.now().strftime("%Y-%m-%d %H:%M"), "requests": len(r.items), "commits": sum(i.n_commits for i in r.items),
+                  "checks": r.verification.checks_total, "high_reviewed": st["high"], "mode": "client", "content_hash": ch[:12]})
+    return {"ok": True, "mode": "client", "html_path": path, "pdf_path": pdf, "html_name": os.path.basename(path), "pdf_name": os.path.basename(pdf) if pdf else "",
+            "pdf_failed": bool(want_pdf) and not pdf, "pdf_error": pdf_err, "content_hash": ch[:12], "items": len(r.items)}
 
 
 def chrome_path():

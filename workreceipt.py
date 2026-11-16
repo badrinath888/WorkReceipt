@@ -518,7 +518,8 @@ def render(ctx):
     o = []
     o.append(f"<!doctype html><meta charset=utf-8><meta http-equiv=Content-Security-Policy content=\"default-src 'none'; style-src 'unsafe-inline'\">"
              f"<meta name=viewport content='width=device-width,initial-scale=1'><title>{e(ctx['title'])}</title><style>{CSS}{PRINT_FOOTER}</style>")
-    o.append("<div class=brand><b>WorkReceipt</b><span>Client work report</span></div>")
+    o.append("<div class=brand><b>WorkReceipt</b><span>"
+             + ("Developer report · PRIVATE · not for clients" if ctx.get("private") else "Client work report") + "</span></div>")
     o.append(f"<h1>{e(ctx['title'])}</h1><div class=ident>"
              f"<div><span class=k>Project</span><span class=v>{e(ctx['project'])}</span></div>"
              f"<div><span class=k>Period</span><span class=v>{e(ctx['period'])}</span></div>"
