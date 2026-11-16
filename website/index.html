@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WorkReceipt — Client-ready reports from your Claude Code work</title>
+<meta name="description" content="WorkReceipt turns Claude Code sessions and Git history into a clear, privacy-reviewed work report. Mac-first, local-first, no account.">
+<meta name="theme-color" content="#faf8f4">
+<meta name="robots" content="noindex">
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+<script>document.documentElement.classList.add('js')</script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-apple" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6M12 19h8"/></symbol>
+    <symbol id="i-git" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M18 11.5c0 4-6 2-11 5"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.4 8.2 8 9 4.6-.8 8-4 8-9V6Z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 1v4M15 1v4M9 19v4M15 19v4M1 9h4M1 15h4M19 9h4M19 15h4"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+    <symbol id="i-cloud-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18M9 5a6 6 0 0 1 10 4 4 4 0 0 1 1.5 7M6 18a4.5 4.5 0 0 1-.6-8.9"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16"/></symbol>
+  </defs>
+</svg>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<!-- 1. FLOATING NAV -->
+<header class="nav" id="nav">
+  <div class="nav-in">
+    <a class="brand" href="#top" aria-label="WorkReceipt home"><img src="assets/logo.svg" alt="" width="26" height="26"><span>WorkReceipt</span></a>
+    <nav aria-label="Primary">
+      <ul class="links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#how">How It Works</a></li>
+        <li><a href="#privacy">Privacy</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+      </ul>
+    </nav>
+    <a class="btn btn-dark" href="#download">Download</a>
+    <button class="menu-btn" id="menuBtn" aria-label="Open menu" aria-expanded="false" aria-controls="mobileMenu"><svg><use href="#i-menu"/></svg></button>
+  </div>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="#features">Features</a><a href="#how">How It Works</a><a href="#privacy">Privacy</a><a href="#pricing">Pricing</a>
+    <a class="btn btn-dark" href="#download">Download</a>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- 2. HERO -->
+<section class="hero" id="top">
+  <div class="wrap">
+    <span class="eyebrow reveal"><i></i>Mac-first · Local-first · Private beta</span>
+    <h1 class="reveal d1">Show clients what your <span class="accent">AI-assisted</span> work delivered.</h1>
+    <p class="lead reveal d2">WorkReceipt reads your Claude Code sessions and Git history on your Mac and turns them into a clear, editable, privacy-reviewed work report. No account. Nothing uploaded.</p>
+    <div class="cta-row reveal d2">
+      <a class="btn btn-primary" href="#download"><svg><use href="#i-apple"/></svg>Download for Mac</a>
+      <a class="btn btn-ghost" href="#how">See how it works <svg><use href="#i-arrow"/></svg></a>
+    </div>
+    <div class="hero-chips reveal d2">
+      <span class="chip"><svg><use href="#i-lock"/></svg>Runs on your Mac</span>
+      <span class="chip"><svg><use href="#i-user"/></svg>No account required</span>
+      <span class="chip"><svg><use href="#i-file"/></svg>HTML &amp; PDF export</span>
+    </div>
+    <div class="hero-stage reveal" style="width:100%;max-width:1000px">
+      <div class="mac">
+        <div class="mac-bar"><i></i><i></i><i></i><span class="mac-title">WorkReceipt — Report Studio</span><span class="badge-syn">Real app · synthetic demo data</span></div>
+        <img src="assets/product/studio.webp" width="2360" height="1520" alt="WorkReceipt Report Studio showing work requests from Claude Code sessions beside Git commit evidence for a synthetic demo project">
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. PRODUCT SHOWCASE -->
+<section id="showcase" style="padding-top:var(--s8)">
+  <div class="wrap">
+    <div class="sec-head center reveal">
+      <span class="eyebrow"><i></i>The app</span>
+      <h2>A calm workspace for turning evidence into a report.</h2>
+      <p class="lead">Every screen below is a capture of the actual WorkReceipt app (v0.5.1), run on a synthetic demo project.</p>
+    </div>
+    <div class="tabs reveal" role="tablist" aria-label="Product views">
+      <button class="tab" role="tab" id="t-overview" aria-controls="p-overview" aria-selected="true">Overview</button>
+      <button class="tab" role="tab" id="t-projects" aria-controls="p-projects" aria-selected="false" tabindex="-1">Projects</button>
+      <button class="tab" role="tab" id="t-studio" aria-controls="p-studio" aria-selected="false" tabindex="-1">Report Studio</button>
+      <button class="tab" role="tab" id="t-privacy" aria-controls="p-privacy" aria-selected="false" tabindex="-1">Privacy Center</button>
+      <button class="tab" role="tab" id="t-report" aria-controls="p-report" aria-selected="false" tabindex="-1">Exported report</button>
+    </div>
+    <div class="showcase-win reveal">
+      <div class="panel on" role="tabpanel" id="p-overview" aria-labelledby="t-overview">
+        <div class="mac"><div class="mac-bar"><i></i><i></i><i></i><span class="mac-title">WorkReceipt — Overview</span><span class="badge-syn">Synthetic demo data</span></div>
+        <img loading="lazy" src="assets/product/overview.webp" width="2360" height="1520" alt="WorkReceipt Overview: project count, weekly session activity chart and recent reports"></div>
+        <div class="panel-cap"><span><b>Overview.</b> Your projects, weekly Claude Code session activity and exported reports at a glance.</span></div>
+      </div>
+      <div class="panel" role="tabpanel" id="p-projects" aria-labelledby="t-projects" hidden>
+        <div class="mac"><div class="mac-bar"><i></i><i></i><i></i><span class="mac-title">WorkReceipt — Projects</span><span class="badge-syn">Synthetic demo data</span></div>
+        <img loading="lazy" src="assets/product/projects.webp" width="2360" height="1520" alt="WorkReceipt Projects screen listing detected Claude Code projects with a date range and client name"></div>
+        <div class="panel-cap"><span><b>Projects.</b> Pick a repository, choose the period and name the client. WorkReceipt finds Claude Code projects on your Mac.</span></div>
+      </div>
+      <div class="panel" role="tabpanel" id="p-studio" aria-labelledby="t-studio" hidden>
+        <div class="mac"><div class="mac-bar"><i></i><i></i><i></i><span class="mac-title">WorkReceipt — Report Studio</span><span class="badge-syn">Synthetic demo data</span></div>
+        <img loading="lazy" src="assets/product/studio.webp" width="2360" height="1520" alt="WorkReceipt Report Studio with editable work requests and Git evidence"></div>
+        <div class="panel-cap"><span><b>Report Studio.</b> Edit each work description, see Git commits as evidence, and export when privacy review is complete.</span></div>
+      </div>
+      <div class="panel" role="tabpanel" id="p-privacy" aria-labelledby="t-privacy" hidden>
+        <div class="mac"><div class="mac-bar"><i></i><i></i><i></i><span class="mac-title">WorkReceipt — Privacy Center</span><span class="badge-syn">Synthetic demo data</span></div>
+        <img loading="lazy" src="assets/product/privacy.webp" width="2360" height="1520" alt="WorkReceipt Privacy Center listing masked values by severity with an export approval counter"></div>
+        <div class="panel-cap"><span><b>Privacy Center.</b> Every masked value is listed by severity. High-severity items need your decision before export unlocks.</span></div>
+      </div>
+      <div class="panel" role="tabpanel" id="p-report" aria-labelledby="t-report" hidden>
+        <div class="mac report"><div class="mac-bar"><i></i><i></i><i></i><span class="mac-title">example_report.html</span><span class="badge-syn">Synthetic example</span></div>
+        <img loading="lazy" src="assets/product/report.webp" width="2000" height="1520" alt="Exported WorkReceipt HTML report titled Work report for Acme Demo Co (synthetic)"></div>
+        <div class="panel-cap"><span><b>Exported report.</b> A standalone HTML file you can send, or print to PDF.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. PROBLEM / SOLUTION -->
+<section class="band" id="why">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow"><i></i>Why WorkReceipt</span>
+      <h2>AI-assisted work is real work. It's just hard to show.</h2>
+      <p class="lead">Hours of prompts, tool calls and test runs live in log files your client will never open. Raw commit lists don't explain intent. Chat transcripts expose far more than you'd ever send.</p>
+    </div>
+    <div class="ps">
+      <div class="ps-card problem reveal">
+        <span class="tag">The problem</span>
+        <h3>Evidence exists, but it isn't communicable.</h3>
+        <ul>
+          <li><svg><use href="#i-x"/></svg>Session logs are long, technical and full of context you can't share.</li>
+          <li><svg><use href="#i-x"/></svg>Commit messages show what changed, not what was asked for.</li>
+          <li><svg><use href="#i-x"/></svg>Pasting transcripts risks leaking keys, emails and internal paths.</li>
+          <li><svg><use href="#i-x"/></svg>Clients can't tell requested work from verified, delivered work.</li>
+        </ul>
+      </div>
+      <div class="ps-card solve reveal d1">
+        <span class="tag">The solution</span>
+        <h3>One readable report, built from your own evidence.</h3>
+        <ul>
+          <li><svg><use href="#i-check"/></svg>Requests, commits and checks are kept in clearly separate sections.</li>
+          <li><svg><use href="#i-check"/></svg>Git history is the evidence of delivered changes, not the prompts.</li>
+          <li><svg><use href="#i-check"/></svg>Secrets and personal data are masked and reviewed before export.</li>
+          <li><svg><use href="#i-check"/></svg>You edit every description before the client sees it.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="flow reveal" aria-label="From evidence to report">
+      <div class="flow-n"><span class="tag">Input</span><b>Claude Code sessions</b><small>Read from your Mac</small></div>
+      <div class="flow-a"><svg><use href="#i-arrow"/></svg></div>
+      <div class="flow-n"><span class="tag">Evidence</span><b>Git commits &amp; recorded checks</b><small>Reviewed &amp; masked</small></div>
+      <div class="flow-a"><svg><use href="#i-arrow"/></svg></div>
+      <div class="flow-n"><span class="tag">Output</span><b>Client-ready report</b><small>HTML or PDF</small></div>
+    </div>
+  </div>
+</section>
+
+<!-- 5. FEATURES -->
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head center reveal">
+      <span class="eyebrow"><i></i>Features</span>
+      <h2>Everything a client report needs. Nothing it shouldn't.</h2>
+    </div>
+    <div class="grid3">
+      <article class="card reveal"><div class="ico"><svg><use href="#i-terminal"/></svg></div><h3>Claude Code activity analysis</h3><p>Reads your local Claude Code session logs and extracts the work you asked for, filtered to the project you choose.</p></article>
+      <article class="card reveal d1"><div class="ico"><svg><use href="#i-git"/></svg></div><h3>Git commit evidence</h3><p>Commits in the period become the evidence of delivered changes, with the areas of the codebase they touched.</p></article>
+      <article class="card reveal d2"><div class="ico"><svg><use href="#i-edit"/></svg></div><h3>Editable reports</h3><p>Rewrite any work description in plain language before you export. Edits are re-checked for secrets.</p></article>
+      <article class="card reveal"><div class="ico"><svg><use href="#i-shield"/></svg></div><h3>Privacy review</h3><p>Masked values are listed by severity. Export stays blocked until each high-severity item has your decision.</p></article>
+      <article class="card reveal d1"><div class="ico"><svg><use href="#i-file"/></svg></div><h3>HTML &amp; PDF export</h3><p>Export a standalone, print-ready report. Share the HTML file or a PDF, whichever your client prefers.</p></article>
+      <article class="card reveal d2"><div class="ico"><svg><use href="#i-cpu"/></svg></div><h3>Local-first processing</h3><p>Analysis happens on your Mac. No cloud service has to see your sessions or your repository.</p></article>
+    </div>
+  </div>
+</section>
+
+<!-- 6. HOW IT WORKS -->
+<section class="band" id="how">
+  <div class="wrap">
+    <div class="sec-head center reveal">
+      <span class="eyebrow"><i></i>How it works</span>
+      <h2>Three steps from sessions to a shareable report.</h2>
+    </div>
+    <div class="steps">
+      <div class="step reveal"><div class="step-img"><img loading="lazy" src="assets/product/projects.webp" width="2360" height="1520" alt="Projects screen in WorkReceipt"></div><span class="step-n">1</span><h3>Choose a project</h3><p>Select a repository WorkReceipt found from your Claude Code history, set the period and name the client.</p></div>
+      <div class="step reveal d1"><div class="step-img"><img loading="lazy" src="assets/product/privacy.webp" width="2360" height="1520" alt="Privacy Center in WorkReceipt"></div><span class="step-n">2</span><h3>Review evidence and privacy</h3><p>Check requests against Git commits and recorded checks. Review every masked value that needs your decision.</p></div>
+      <div class="step reveal d2"><div class="step-img rep"><img loading="lazy" src="assets/product/report.webp" width="2000" height="1520" alt="Exported report preview"></div><span class="step-n">3</span><h3>Export a client-ready report</h3><p>Edit wording, then export a clean HTML report or PDF to send to your client.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 7. PRIVACY -->
+<section id="privacy">
+  <div class="wrap priv">
+    <div>
+      <div class="sec-head reveal" style="margin-bottom:0">
+        <span class="eyebrow"><i></i>Privacy &amp; trust</span>
+        <h2>Your sessions are yours. They stay on your Mac.</h2>
+        <p class="lead">WorkReceipt is designed so you never have to trust a server with client work.</p>
+      </div>
+      <div class="callout reveal"><b>Redaction is best-effort.</b> Automatic masking catches common secret and personal-data patterns but is not a guarantee. Read your report before you send it.</div>
+    </div>
+    <div class="priv-list">
+      <div class="priv-item reveal"><div class="ico"><svg><use href="#i-cpu"/></svg></div><div><h3>Local processing</h3><p>Logs and repositories are read from disk on your computer and processed there.</p></div></div>
+      <div class="priv-item reveal d1"><div class="ico"><svg><use href="#i-user"/></svg></div><div><h3>No required account</h3><p>No sign-up, no login. Open the app and start.</p></div></div>
+      <div class="priv-item reveal d1"><div class="ico"><svg><use href="#i-cloud-off"/></svg></div><div><h3>No cloud upload required</h3><p>Nothing is sent to a WorkReceipt server to generate a report.</p></div></div>
+      <div class="priv-item reveal d2"><div class="ico"><svg><use href="#i-shield"/></svg></div><div><h3>Best-effort redaction, explicit review</h3><p>Keys, tokens, emails and paths are masked. You must review each high-severity finding before export.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 8. EXAMPLE REPORT -->
+<section class="band" id="example">
+  <div class="wrap rep-wrap">
+    <div>
+      <div class="sec-head reveal" style="margin-bottom:0">
+        <span class="eyebrow"><i></i>Example report</span>
+        <h2>Requests, delivery and verification, kept separate.</h2>
+        <p class="lead">A request is not proof of completion. The report says so, and shows what Git and your recorded checks actually support.</p>
+      </div>
+      <ul class="checks reveal">
+        <li><svg><use href="#i-check"/></svg><span><b>Work requested</b> comes from your prompts.</span></li>
+        <li><svg><use href="#i-check"/></svg><span><b>Changes delivered</b> come from Git commits.</span></li>
+        <li><svg><use href="#i-check"/></svg><span><b>Verification</b> lists recorded checks and outcomes. They are not re-run, and never labeled “passed”.</span></li>
+      </ul>
+    </div>
+    <div class="receipt-shell reveal d1">
+      <div class="receipt" role="img" aria-label="Preview of a synthetic example WorkReceipt report for Acme Demo Co">
+        <div class="r-top"><span class="chip">WorkReceipt report</span><span class="badge-syn" style="margin-left:0">Synthetic example</span></div>
+        <div class="r-title">Work report for Acme Demo Co</div>
+        <div class="r-meta">acme-demo-site · 2026-11-01 → 2026-11-07 · Prepared by Demo Dev</div>
+        <div class="r-stats"><div><b>3</b><span>work requests</span></div><div><b>4</b><span>commits</span></div><div><b>4</b><span>files changed</span></div><div><b>+82 / −0</b><span>lines</span></div></div>
+        <div class="r-h">Changes delivered</div>
+        <div class="r-row"><span class="mono">11-06</span>Add CSV export for orders</div>
+        <div class="r-row"><span class="mono">11-04</span>Add checkout regression tests</div>
+        <div class="r-row"><span class="mono">11-04</span>Fix checkout total rounding</div>
+        <div class="r-row"><span class="mono">11-03</span>Add pricing page with three plans</div>
+        <hr class="dashed">
+        <div class="r-h" style="margin-top:0">Verification</div>
+        <div class="r-row"><span class="mono">pytest -q</span><span class="r-ok">no error reported</span></div>
+        <div class="r-row"><span class="mono">npm run lint</span><span class="r-unk">result not recorded</span></div>
+        <div class="r-note">Checks were recorded in session logs and not re-run for this report. All content above is invented demonstration data.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 9. PRICING -->
+<section id="pricing">
+  <div class="wrap">
+    <div class="sec-head center reveal">
+      <span class="eyebrow"><i></i>Pricing</span>
+      <h2>Simple, affordable pricing is on the way.</h2>
+    </div>
+    <div class="price-note reveal"><svg width="16" height="16" style="color:var(--amber)"><use href="#i-shield"/></svg>Pricing is not finalized. This section is a layout prototype and nothing here can be purchased.</div>
+    <div class="pricing">
+      <div class="plan reveal">
+        <h3>Private beta</h3>
+        <div class="plan-price">Limited testing<small>Current stage · v0.5.1</small></div>
+        <p style="color:var(--muted);font-size:.93rem">For freelancers helping validate WorkReceipt on real projects before a public release.</p>
+        <ul>
+          <li><svg><use href="#i-check"/></svg>Full local report workflow</li>
+          <li><svg><use href="#i-check"/></svg>HTML &amp; PDF export</li>
+          <li><svg><use href="#i-check"/></svg>Terms to be confirmed</li>
+        </ul>
+        <a class="btn btn-ghost" href="#download">View release status</a>
+      </div>
+      <div class="plan feat reveal d1">
+        <span class="tag-top">Planned</span>
+        <h3>WorkReceipt license</h3>
+        <div class="plan-price">Price to be announced<small>Model and amount not decided</small></div>
+        <p style="color:var(--muted);font-size:.93rem">An affordable license for freelance developers and small agencies, once the product is validated.</p>
+        <ul>
+          <li><svg><use href="#i-check"/></svg>Local report workflow</li>
+          <li><svg><use href="#i-check"/></svg>HTML &amp; PDF export</li>
+          <li><svg><use href="#i-check"/></svg>Terms to be confirmed</li>
+        </ul>
+        <span class="btn" aria-disabled="true" role="note">Not yet available</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 10. FAQ -->
+<section class="band" id="faq">
+  <div class="wrap">
+    <div class="sec-head center reveal"><span class="eyebrow"><i></i>FAQ</span><h2>Questions, answered plainly.</h2></div>
+    <div class="faq reveal">
+      <details open><summary>Which Macs and macOS versions are supported?</summary><p>WorkReceipt is Mac-first and is being built and tested on macOS. Specific minimum macOS and Apple silicon / Intel support will be confirmed at release. Windows and Linux are not supported targets.</p></details>
+      <details><summary>What do I need from Claude Code?</summary><p>You need Claude Code session logs on your Mac, which Claude Code stores locally. WorkReceipt reads those logs for the project you pick. It does not need Claude Code to be running.</p></details>
+      <details><summary>Do I need Git?</summary><p>Yes. Git history is the evidence of delivered changes, so the project should be a Git repository with commits in the reporting period. Sessions without matching commits are shown as requests only.</p></details>
+      <details><summary>How is my data handled?</summary><p>Sessions and repositories are read and processed locally. There is no required account and no cloud upload. Only prompt titles, check commands, commit subjects and folder names are used in a report; file contents and tool output are not.</p></details>
+      <details><summary>How accurate are the reports?</summary><p>The report separates what was requested, what Git shows was delivered, and which checks were recorded. It never claims a request was completed, and recorded checks are not re-run. Redaction is best-effort, so always read a report before you send it.</p></details>
+      <details><summary>What export formats are available?</summary><p>A standalone HTML report, and PDF export. You can edit descriptions before exporting.</p></details>
+    </div>
+  </div>
+</section>
+
+<!-- DOWNLOAD / RELEASE STATUS -->
+<section id="download">
+  <div class="wrap">
+    <div class="dl reveal">
+      <span class="eyebrow" style="background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16);color:#d9d7cf">Release status</span>
+      <h2>WorkReceipt for Mac isn't publicly available yet.</h2>
+      <p class="lead">The app is in private beta. No public download exists, so there is nothing to install from this page yet.</p>
+      <div class="status">
+        <div><small>Version</small><b>0.5.1 (beta)</b></div>
+        <div><small>Platform</small><b>macOS</b></div>
+        <div><small>Availability</small><b>Not public</b></div>
+      </div>
+      <div class="cta-row">
+        <span class="btn btn-ghost" aria-disabled="true" role="note"><svg><use href="#i-apple"/></svg>Download for Mac — coming soon</span>
+        <a class="btn btn-ghost" href="#how">See how it works</a>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- 11. FOOTER -->
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <div>
+        <a class="brand" href="#top"><img src="assets/logo.svg" alt="" width="26" height="26"><span>WorkReceipt</span></a>
+        <p>Client-ready reports from your Claude Code sessions and Git history. Mac-first, local-first.</p>
+      </div>
+      <div><h3>Product</h3><ul><li><a href="#features">Features</a></li><li><a href="#how">How it works</a></li><li><a href="#example">Example report</a></li><li><a href="#pricing">Pricing</a></li></ul></div>
+      <div><h3>Trust</h3><ul><li><a href="#privacy">Privacy</a></li><li><a href="#faq">FAQ</a></li><li><a href="#download">Release status</a></li></ul></div>
+      <div><h3>Privacy</h3><p style="margin-top:0">Processed on your Mac. No account, no required cloud upload. Redaction is best-effort: review every report before sending.</p></div>
+    </div>
+    <div class="foot-bottom"><span>© 2026 WorkReceipt. Design prototype — not a public release.</span><span>Version 0.5.1 · Private beta · All example data is synthetic</span></div>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>
