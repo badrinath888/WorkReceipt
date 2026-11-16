@@ -1,7 +1,8 @@
 """Visual/structural QA on REAL rendered PDFs (headless Chrome on Linux; the macOS WebKit path is not exercised here).
 Synthetic data only. Every PDF is rendered page-by-page and checked for: Letter size, page count, blank pages, text inside margins,
 selectable/searchable text, page order, completeness vs the HTML, colours present, and absence of sentinel secrets."""
-import json, os, random, re, shutil, subprocess, sys, tempfile, unittest
+import json, os, random, re, shutil, subprocess, sys, tempfile, types, unittest
+from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import workreceipt as w
 CHROME = next((c for c in ("/usr/bin/google-chrome", "/usr/bin/chromium") if os.path.exists(c)), None)
@@ -159,7 +160,76 @@ class MacVerifyLogic(unittest.TestCase):
 
     def test_no_slicing_fallback_remains(self):
         src = open(os.path.join(HERE, "desktop", "pdf_mac.py")).read()
-        self.assertNotIn("createPDFWithConfiguration", src); self.assertNotIn("_write_sliced", src); self.assertIn("verify_layout", src)
+        self.assertNotIn("createPDFWithConfiguration", src); self.assertNotIn("_write_sliced", src); self.assertIn("inspect_pdf", src)
+
+
+class MacInspect(unittest.TestCase):
+    """Regression for the Mac failure 'verify: the PDF could not be read back': the verifier called a PDFKit constructor that PyObjC does
+    not expose and so rejected a valid PDF. A verifier that cannot run must never reject a structurally valid PDF."""
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, self.tmp, True)
+        from desktop import pdf_mac; self.pm = pdf_mac
+
+    def make(self, name, body, box="[0 0 612 792]", pages=2):
+        p = os.path.join(self.tmp, name)
+        objs = "".join(f"{i} 0 obj << /Type /Page /MediaBox {box} >> endobj\n" for i in range(pages))
+        open(p, "wb").write(b"%PDF-1.4\n" + objs.encode() + b"%" * 200 + b"\n%%EOF")
+        return p
+
+    def with_quartz(self, mod):
+        return mock.patch.dict(sys.modules, {"Quartz": mod})
+
+    def test_source_does_not_use_nonexistent_pdfkit_constructor(self):
+        src = open(os.path.join(HERE, "desktop", "pdf_mac.py")).read()
+        self.assertNotIn("documentWithURL_", src); self.assertIn("alloc().initWithURL_", src)
+
+    def test_pdfkit_unusable_falls_back_to_bytes_and_accepts_valid_pdf(self):
+        d = self.pm.inspect_pdf(self.make("ok.pdf", ""))                       # Quartz not importable here
+        self.assertEqual((d["verifier"], d["pages"], d["problem"], d["signature"]), ("bytes", 2, None, True))
+        broken = types.SimpleNamespace(PDFDocument=types.SimpleNamespace(alloc=lambda: (_ for _ in ()).throw(AttributeError("x"))), kPDFDisplayBoxMediaBox=0)
+        with self.with_quartz(broken):
+            d = self.pm.inspect_pdf(self.make("ok2.pdf", "")); self.assertEqual((d["verifier"], d["problem"], d["exc"]), ("bytes", None, "AttributeError"))
+
+    def test_pdfkit_path_reports_pages_and_layout(self):
+        class Doc:
+            def initWithURL_(s, u): return s
+            def pageCount(s): return 2
+            def pageAtIndex_(s, i): return i
+        mod = types.SimpleNamespace(PDFDocument=types.SimpleNamespace(alloc=lambda: Doc()), kPDFDisplayBoxMediaBox=0)
+        with self.with_quartz(mod), mock.patch.object(self.pm, "_url", lambda p: p), mock.patch.object(self.pm, "_page_facts", lambda pg, b: ((612, 792), 500, (60, 550))):
+            d = self.pm.inspect_pdf(self.make("k.pdf", "")); self.assertEqual((d["verifier"], d["pages"], d["problem"]), ("pdfkit", 2, None))
+        with self.with_quartz(mod), mock.patch.object(self.pm, "_url", lambda p: p), mock.patch.object(self.pm, "_page_facts", lambda pg, b: ((612, 5000), 500, (60, 550))):
+            self.assertIn("not US Letter", self.pm.inspect_pdf(self.make("k2.pdf", ""))["problem"])
+
+    def test_positive_defects_are_rejected(self):
+        self.assertIn("not US Letter", self.pm.inspect_pdf(self.make("big.pdf", "", box="[0 0 612 9000]", pages=1))["problem"])
+        junk = os.path.join(self.tmp, "j.pdf"); open(junk, "wb").write(b"<html>" + b"x" * 300); self.assertFalse(self.pm.inspect_pdf(junk)["signature"])
+        empty = os.path.join(self.tmp, "e.pdf"); open(empty, "wb").write(b""); d = self.pm.inspect_pdf(empty); self.assertEqual((d["exists"], d["size"], d["signature"]), (True, 0, False))
+        self.assertFalse(self.pm.inspect_pdf(os.path.join(self.tmp, "none.pdf"))["exists"])
+
+    def test_compressed_object_streams_are_unverified_not_rejected(self):
+        p = os.path.join(self.tmp, "c.pdf"); open(p, "wb").write(b"%PDF-1.5\n" + b"\x00" * 400)
+        d = self.pm.inspect_pdf(p); self.assertEqual((d["verifier"], d["problem"]), ("unverified", None))
+
+    def test_diag_file_holds_flags_only(self):
+        os.environ["WORKRECEIPT_HOME"] = self.tmp
+        d = self.pm.inspect_pdf(self.make("n.pdf", "")); self.pm._write_diag(d)
+        t = open(os.path.join(self.tmp, "pdf-last-diag.txt")).read(); self.assertIn("verifier=bytes", t); self.assertNotIn(self.tmp, t); self.assertNotIn("%PDF", t)
+
+    def test_core_rejects_non_pdf_backend_output_and_keeps_html(self):
+        import app_core as core
+        os.environ["WORKRECEIPT_HOME"] = self.tmp
+        h = os.path.join(self.tmp, "r.html"); open(h, "w").write("<p>x</p>")
+        def junk(html, out): open(out, "wb").write(b"<html>not a pdf" + b"x" * 300)
+        old = core.PDF_BACKEND; core.PDF_BACKEND = junk; self.addCleanup(setattr, core, "PDF_BACKEND", old)
+        self.assertIsNone(core.to_pdf(h)); self.assertFalse(os.path.exists(h[:-5] + ".pdf")); self.assertTrue(os.path.exists(h))
+        self.assertTrue(core.LAST_PDF_ERROR.startswith("verify:")); self.assertNotIn(self.tmp, core.LAST_PDF_ERROR)
+
+    def test_real_chrome_pdf_passes_byte_verifier(self):
+        if not HAVE: self.skipTest("needs Chrome")
+        p = to_pdf(w.render(ctx(30, 60, 20)), "real", self.tmp); d = self.pm.inspect_pdf(p)
+        self.assertIn(d["verifier"], ("bytes", "unverified")); self.assertIsNone(d["problem"]); self.assertTrue(d["signature"])
+        if d["verifier"] == "bytes": self.assertGreaterEqual(d["pages"], 3)
 
 
 @unittest.skipUnless(HAVE, "needs Chrome + poppler")

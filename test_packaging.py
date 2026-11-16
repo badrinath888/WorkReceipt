@@ -80,7 +80,7 @@ class PdfExport(unittest.TestCase):
         self.log(f"pytest -q; mysql --password {HI}")
         seen = []
         def backend(html, out):
-            seen.append(html); open(out, "wb").write(b"%PDF-1.4 fake")
+            seen.append(html); open(out, "wb").write(b"%PDF-1.4 fake" + b"x" * 200)
         core.PDF_BACKEND = backend
         r = core.export({"repo": self.ws.repo, "pdf": True}, {}, {})                  # unresolved high severity: blocked, backend never called
         self.assertFalse(r["ok"]); self.assertEqual(seen, [])

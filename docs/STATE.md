@@ -58,3 +58,10 @@ NOT tested: any macOS run, real pywebview/WKWebView window (bridge only stubbed)
 - New report layout (docs/PDF_DESIGN.md), no truncation, print-first pagination CSS. Mac PDF: slicing fallback removed, PDFKit verify added.
 - test_pdf_quality.py renders real PDFs (short 2p, medium 7p, long 159p, long-strings, empty, mixed, redaction, colours) and checks every page. Old markup-bound tests updated.
 - NOT verified: packaged macOS PDF generation (see MAC_VALIDATION.md Round 4).
+
+
+## v0.5.1 — Mac PDF "verify: could not be read back" + export result card
+- Root cause (high confidence, from code, NOT yet confirmed on a Mac): v0.5.0's PDFKit verifier called `PDFDocument.documentWithURL_`, which PyObjC does not expose, so it always got None and rejected a valid WebKit PDF. The print job itself had succeeded (the signature/size check ran before and passed).
+- Fix: `alloc().initWithURL_`; verifier failures fall back to a byte-level page/MediaBox check; a verifier that cannot run => "unverified", never a rejection. Only positive defects (bad signature, wrong page size, clipped text, no text) reject. `pdf-last-diag.txt` (flags only) written every attempt; core re-validates the PDF signature for every backend.
+- UI: compact export card with success / partial (warning, no PDF actions, optional technical details) / failure (retry) states, file names only, no paths.
+- Not verified on macOS. See MAC_VALIDATION.md Round 5.

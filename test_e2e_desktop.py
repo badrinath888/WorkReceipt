@@ -99,7 +99,7 @@ class E2E(unittest.TestCase):
             r = pg.locator("[data-review]:not(:has-text('Change'))")
             if r.count() == 0: break
             r.first.click(); pg.check("input[value=unsure]"); pg.check("#ack"); pg.click("#confirmrev")
-        pg.click(".tab[data-go=studio]"); pg.click("#export"); pg.wait_for_selector(".callout.ok:has-text('Exported')", timeout=60000)
+        pg.click(".tab[data-go=studio]"); pg.click("#export"); pg.wait_for_selector(".xcard.ok:has-text('Exported')", timeout=60000)
         files = os.listdir(os.path.join(self.root, "out"))
         html = open(os.path.join(self.root, "out", next(f for f in files if f.endswith(".html")))).read()
         self.assertIn("Edited by user", html); self.assertNotIn("AKIA", html)
@@ -227,12 +227,12 @@ class E2E(unittest.TestCase):
 
     def test_b_open_and_reveal_send_names_only_and_show_errors(self):
         n = self.native(); pg = self.page(); self.load_demo(pg, "?shell=desktop"); self.review_all(pg)
-        pg.click(".tab[data-go=studio]"); pg.click("#export"); pg.wait_for_selector(".callout.ok:has-text('Exported')", timeout=60000)
-        pg.click(".callout.ok [data-open]"); pg.click(".callout.ok [data-showfile]")
+        pg.click(".tab[data-go=studio]"); pg.click("#export"); pg.wait_for_selector(".xcard.ok:has-text('Exported')", timeout=60000)
+        pg.click(".xcard [data-open][data-kind=html]"); pg.click(".xcard [data-showfile]")
         calls = n.calls; self.assertEqual([c[0] for c in calls], ["open", "reveal"])
-        for c in calls: self.assertTrue(c[1].endswith(".html") and "/" not in c[1] and "\\" not in c[1], c); self.assertEqual(c[2], "html")
+        for c in calls: self.assertTrue(c[1].endswith((".html", ".pdf")) and "/" not in c[1] and "\\" not in c[1], c)
         n.res = {"ok": False, "error": "That report file no longer exists. It may have been moved or deleted"}   # simulate backend refusal
-        pg.click(".callout.ok [data-open]"); pg.wait_for_selector("#toast.on:has-text('no longer exists')")
+        pg.click(".xcard [data-open][data-kind=html]"); pg.wait_for_selector("#toast.on:has-text('no longer exists')")
         pg.click(".tab[data-go=reports]"); pg.click("[data-open]"); pg.click("[data-showfile]"); self.assertEqual(len(n.calls), 5)
         self.assertEqual(self.errs, []); pg.close()
 
@@ -287,3 +287,69 @@ class Backend(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExportCard(unittest.TestCase):
+    """Export result card states, driven by real clicks. /api/export responses are shaped by a route handler for the partial/failure
+    cases (the server itself is covered by the other tests); success uses the real export."""
+    setUpClass = classmethod(lambda cls: E2E.setUpClass.__func__(cls))
+    tearDownClass = classmethod(lambda cls: E2E.tearDownClass.__func__(cls))
+    page, native, load_demo, review_all, saved = E2E.page, E2E.native, E2E.load_demo, E2E.review_all, E2E.saved
+
+    def go_studio(self, pg, q="?shell=desktop"):
+        self.load_demo(pg, q); self.review_all(pg); pg.click(".tab[data-go=studio]")
+
+    def respond(self, pg, status, body):
+        import json as _j
+        pg.route("**/api/export", lambda r: r.fulfill(status=status, content_type="application/json", body=_j.dumps(body)))
+
+    def card_ok(self, pg, sel):
+        box = pg.locator(sel).bounding_box(); vw = pg.viewport_size["width"]
+        self.assertLessEqual(box["x"] + box["width"], vw + 1); self.assertLessEqual(box["width"], 660)
+        self.assertEqual(pg.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), True)
+        txt = pg.inner_text(sel); self.assertNotRegex(txt, r"(^|\n)\s*[.,;·]\s*($|\n)"); self.assertNotIn("/", txt.replace("n/a", ""))   # no stray punctuation lines, no paths
+        self.assertNotIn(self.root, txt)
+
+    def test_success_state_has_html_and_pdf_actions_in_one_row(self):
+        n = self.native(); pg = self.page(); self.go_studio(pg)
+        pg.click("#export"); pg.wait_for_selector(".xcard.busy"); pg.wait_for_selector(".xcard.ok", timeout=60000)
+        self.card_ok(pg, ".xcard"); self.assertIn("HTML and PDF", pg.inner_text(".xcard"))
+        names = pg.locator(".xcard .xact .btn").all_inner_texts(); self.assertEqual(names, ["Open HTML", "Open PDF", "Show in Finder"])
+        ys = {round(b.bounding_box()["y"]) for b in pg.locator(".xcard .xact .btn").all()}; self.assertEqual(len(ys), 1)        # one aligned row
+        hn, pn = pg.locator(".xcard .xf").all_inner_texts(); h = [r for r in self.core.history() if os.path.basename(r["html"]) == hn][0]
+        self.assertEqual(os.path.basename(h["pdf"]), pn); self.assertTrue(os.path.isfile(h["html"]) and os.path.isfile(h["pdf"]))   # files really exist
+        self.assertEqual(open(h["pdf"], "rb").read(5), b"%PDF-")
+        pg.click(".xcard [data-open][data-kind=pdf]"); pg.click(".xcard [data-open][data-kind=html]"); pg.click(".xcard [data-showfile]")
+        self.assertEqual([(c[0], c[2]) for c in n.calls], [("open", "pdf"), ("open", "html"), ("reveal", "pdf")])
+        self.assertTrue(all(c[1] == os.path.basename(h["pdf"] if c[2] == "pdf" else h["html"]) for c in n.calls))               # names only, never paths
+        pg.close()
+
+    def test_partial_state_is_warning_not_success_and_hides_pdf_actions(self):
+        n = self.native(); pg = self.page(); self.go_studio(pg)
+        self.respond(pg, 200, {"ok": True, "html_path": "/Users/x/Documents/WorkReceipt Reports/acme-2026.html", "html_name": "acme-2026.html", "pdf_path": None, "pdf_name": "",
+                               "pdf_failed": True, "pdf_error": "verify: WebKit wrote no valid PDF (file exists: True, 0 bytes) at /Users/x/Documents/WorkReceipt Reports/acme.pdf", "edits_dropped": 0})
+        pg.click("#export"); pg.wait_for_selector(".xcard.warn")
+        self.assertEqual(pg.locator(".xcard.ok").count(), 0); self.assertIn("PDF failed", pg.inner_text(".xcard b")); self.card_ok(pg, ".xcard")
+        self.assertEqual(pg.locator(".xcard [data-kind=pdf][data-open]").count(), 0)
+        self.assertEqual(pg.locator(".xcard .xact .btn").all_inner_texts(), ["Open HTML", "Show in Finder"])
+        self.assertFalse(pg.locator(".xd").evaluate("e=>e.open")); pg.click(".xd summary"); self.assertIn("…", pg.inner_text(".xd")); self.assertNotIn("/Users", pg.inner_text(".xcard"))
+        pg.click(".xcard [data-open]"); pg.wait_for_timeout(300); self.assertEqual(n.calls[-1][:2], ("open", "acme-2026.html")); pg.close()
+
+    def test_failure_state_offers_retry_and_no_file_actions(self):
+        self.native(); pg = self.page(); self.go_studio(pg)
+        self.respond(pg, 400, {"error": "Cannot save to the reports folder (/Volumes/Full/Reports): No space left. Choose another folder in Settings"})
+        pg.click("#export"); pg.wait_for_selector(".xcard.err"); self.card_ok(pg, ".xcard")
+        self.assertEqual(pg.locator(".xcard [data-open],.xcard [data-showfile]").count(), 0); self.assertEqual(pg.locator("#retryexp").count(), 1)
+        pg.unroute("**/api/export"); pg.click("#retryexp"); pg.wait_for_selector(".xcard.ok", timeout=60000); pg.close()
+
+    def test_keyboard_and_narrow_viewport(self):
+        self.native(); pg = self.page(); pg.set_viewport_size({"width": 520, "height": 800}); self.go_studio(pg)
+        pg.click("#export"); pg.wait_for_selector(".xcard.ok", timeout=60000); self.card_ok(pg, ".xcard")
+        pg.locator(".xcard .xact .btn").first.focus(); self.assertEqual(pg.evaluate("document.activeElement.dataset.open"), pg.evaluate("document.querySelector('.xcard .xact .btn').dataset.open"))
+        pg.keyboard.press("Tab"); self.assertEqual(pg.evaluate("document.activeElement.dataset.kind"), "pdf"); pg.close()
+
+    def test_unresolved_findings_still_block_export(self):
+        self.native(); before = len(self.core.history()); pg = self.page(); self.core.enable_demo(); self.core.save_settings({"onboarded": True}); pg.goto(self.url + "?shell=desktop#projects")
+        pg.wait_for_selector("tr[data-pick]"); pg.click("tr[data-pick]:has-text('acme-storefront')"); pg.click("#load"); pg.wait_for_selector(".callout.ok:has-text('Loaded')", timeout=60000)
+        pg.click(".tab[data-go=studio]"); pg.click("#export"); pg.wait_for_selector(".tab[data-go=privacy][aria-current=page]")
+        self.assertEqual(len(self.core.history()), before); self.assertEqual(pg.locator(".xcard.ok,.xcard.warn").count(), 0); pg.close()

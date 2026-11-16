@@ -251,3 +251,17 @@ input,textarea,[contenteditable],pre,.mono,.ctx{-webkit-user-select:text;user-se
 .g2s{grid-template-columns:repeat(2,minmax(0,1fr))}@media (max-width:900px){.g2s{grid-template-columns:1fr}}
 input.path{font:12.5px/1.4 var(--mono);text-overflow:ellipsis;min-width:0;width:100%}
 .path-txt{overflow-wrap:anywhere;word-break:break-all}
+
+/* export result card */
+.xcard{max-width:640px;margin:0 0 14px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-size:12.5px}
+.xcard .xh{display:flex;align-items:center;gap:8px}.xcard .xh b{font-size:13.5px;font-weight:600}
+.xcard .xdot{width:9px;height:9px;border-radius:50%;flex:none;background:var(--muted)}
+.xcard.ok{border-color:rgba(23,145,90,.3)}.xcard.ok .xdot{background:#17915a}
+.xcard.warn{border-color:rgba(242,106,33,.4);background:var(--orange-soft)}.xcard.warn .xdot{background:#f26a21}
+.xcard.err{border-color:rgba(214,69,61,.35);background:rgba(214,69,61,.06)}.xcard.err .xdot{background:#d6453d}
+.xcard.busy .xdot{background:var(--teal);animation:xpulse 1s infinite alternate}@keyframes xpulse{to{opacity:.25}}
+.xcard .xs{margin:4px 0 0 17px;color:var(--muted);overflow-wrap:anywhere}
+.xfiles{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0 17px}
+.xf{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:11.5px ui-monospace,Menlo,monospace;padding:2px 8px;border-radius:6px;background:rgba(0,0,0,.05)}
+.xact{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 0 17px}
+.xd{margin:8px 0 0 17px}.xd summary{cursor:pointer;color:var(--muted)}.xd summary:focus-visible,.xact .btn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}.xd p{margin:6px 0 0;overflow-wrap:anywhere}

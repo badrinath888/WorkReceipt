@@ -15,7 +15,7 @@ const TABS = [["overview", "Overview"], ["projects", "Projects"], ["studio", "Re
 const ICON = { overview: "grid", projects: "folder", studio: "doc", privacy: "shield", reports: "lib", settings: "gear" };
 
 const S = { tab: "overview", ob: null, q: "", rf: "", rt: "", busy: "", data: null, repo: "", since: "", until: "", client: "", author: "", gitAuthor: "", terms: [], prev: null,
-  titles: {}, disp: {}, open: new Set(), dlg: null, showCleared: false, loading: false, err: "", html: null, exporting: false, lastExport: null, repoDraft: null };
+  titles: {}, disp: {}, open: new Set(), dlg: null, showCleared: false, loading: false, err: "", html: null, exporting: false, lastExport: null, exportFail: "", repoDraft: null };
 
 async function api(path, body) {
   const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "X-WR-Token": TOKEN, "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -201,6 +201,21 @@ function vProjects() {
 }
 
 /* ---------- Report Studio ---------- */
+const shortErr = m => String(m || "").replace(/\/[^\s)"']+/g, "…").slice(0, 240);       // never show filesystem paths in notifications
+function exportCard() {
+  const X = S.lastExport, bad = S.exportFail;
+  if (S.exporting) return `<div class="xcard busy" role="status" aria-live="polite"><div class="xh"><span class="xdot"></span><b>Exporting report…</b></div><p class="xs">Creating the HTML file and the PDF. This can take a few seconds.</p></div>`;
+  if (bad) return `<div class="xcard err" role="alert"><div class="xh"><span class="xdot"></span><b>Export failed</b></div><p class="xs">${esc(shortErr(bad))}</p><div class="xact"><button class="btn sm" id="retryexp">Try again</button></div></div>`;
+  if (!X) return "";
+  const hn = X.html_name || fname(X.html_path), pn = X.pdf_name || (X.pdf_path ? fname(X.pdf_path) : "");
+  const partial = !!X.pdf_failed, st = partial ? "warn" : "ok";
+  const title = partial ? "HTML exported, PDF failed" : (pn ? "Exported: HTML and PDF" : "Exported: HTML");
+  const sub = partial ? "The HTML report was saved. The PDF could not be created, so it is not listed." : (pn ? "Both files were saved to your reports folder." : "The HTML report was saved to your reports folder.");
+  const files = `<span class="xf" title="${esc(hn)}">${esc(hn)}</span>${pn ? `<span class="xf" title="${esc(pn)}">${esc(pn)}</span>` : ""}`;
+  const acts = `<button class="btn sm" data-open="${esc(hn)}" data-kind="html">Open HTML</button>${pn ? `<button class="btn sm" data-open="${esc(pn)}" data-kind="pdf">Open PDF</button>` : ""}<button class="btn sm" data-showfile="${esc(pn || hn)}" data-kind="${pn ? "pdf" : "html"}">Show in Finder</button>`;
+  const det = partial && X.pdf_error ? `<details class="xd"><summary>View technical details</summary><p class="mono">${esc(shortErr(X.pdf_error))}</p></details>` : "";
+  return `<div class="xcard ${st}" role="status"><div class="xh"><span class="xdot"></span><b>${title}</b></div><p class="xs">${sub}</p><div class="xfiles">${files}</div><div class="xact">${acts}</div>${det}</div>`;
+}
 function vStudio() {
   const P = S.prev;
   if (!P) return `<div><div class="ph"><div><h2>Report Studio</h2><p>Edit work descriptions, check the evidence and export.</p></div></div><div class="card"><div class="empty"><b>No activity loaded</b>Choose a project and load its activity to start a report.<br><button class="btn dark" data-go="projects">Choose a project</button></div></div></div>`;
@@ -208,7 +223,7 @@ function vStudio() {
   return `<div><div class="ph"><div><h2>Report Studio <span class="chip">${esc(P.project)}</span></h2><p>${esc(P.period)} · Git is the evidence of delivered changes; requests are not proof of completion.</p></div>
     <div class="act"><button class="btn" id="preview">${S.html ? "Refresh preview" : "Preview"}</button><button class="btn dark" id="export" ${S.exporting ? "disabled" : ""}>${ic("dl")} Export report</button></div></div>
   ${pend ? `<div class="callout"><div><b>${pend} high-severity masked value${pend > 1 ? "s" : ""} not reviewed yet.</b> Export unlocks after you review each one in the <a href="#privacy" data-go="privacy" style="color:var(--teal);font-weight:500">Privacy Center</a>.</div></div>` : ""}
-  ${S.lastExport ? `<div class="callout ok"><div><b>Exported.</b> Saved to <span class="mono">${esc(S.lastExport.html_path)}</span>${S.lastExport.pdf_path ? ` and <span class="mono">${esc(S.lastExport.pdf_path)}</span>` : ""}.${S.lastExport.pdf_failed ? ` <b>The PDF could not be created</b>; the HTML file was saved.${S.lastExport.pdf_error ? ` <span class="note">Reason: ${esc(S.lastExport.pdf_error)}</span>` : ""}` : ""} <button class="linkbtn" data-open="${esc(fname(S.lastExport.html_path))}" data-kind="html">Open report</button> · <button class="linkbtn" data-showfile="${esc(fname(S.lastExport.html_path))}" data-kind="html">Show in Finder</button>${S.lastExport.pdf_path ? ` · <button class="linkbtn" data-open="${esc(fname(S.lastExport.pdf_path))}" data-kind="pdf">Open PDF</button>` : ""}</div></div>` : ""}
+  ${exportCard()}
   <div class="grid g4">
     <div class="card stat"><div class="k">Work requests</div><div class="v">${P.requests.length}</div><div class="d">${nTitles ? nTitles + " edited" : "from session logs"}</div></div>
     <div class="card stat"><div class="k">Commits ${ic("git", 13)}</div><div class="v">${P.n_commits}</div><div class="d">${P.authors} author(s)</div></div>
@@ -317,7 +332,7 @@ async function autoRefresh() {                           // when the window rega
 }
 addEventListener("focus", autoRefresh); document.addEventListener("visibilitychange", autoRefresh);
 async function load() {
-  S.loading = true; S.err = ""; S.html = null; S.lastExport = null; render();
+  S.loading = true; S.err = ""; S.html = null; S.lastExport = null; S.exportFail = ""; render();
   try {
     S.prev = await api("/api/preview", opts()); { const ids = new Set(highD().map(d => d.id)); for (const k of Object.keys(S.disp)) if (!ids.has(k)) delete S.disp[k]; }
     S.titles = {};
@@ -332,12 +347,12 @@ async function makePreview() {
 }
 async function doExport() {
   if (pendingHigh().length) { toast("Review high-severity findings first"); go("privacy"); return; }
-  S.exporting = true; render();
+  S.exporting = true; S.exportFail = ""; S.lastExport = null; render();
   try {
     const r = await api("/api/export", { ...opts(), titles: S.titles, approved: S.disp, pdf: S.data.chrome });
     if (r._status === 409) { toast("Export blocked: high-severity findings need review"); go("privacy"); }
-    else { S.lastExport = r; await loadState(); toast(r.edits_dropped ? `Report exported (${r.edits_dropped} edit(s) skipped: that request is no longer in the logs)` : "Report exported"); }
-  } catch (e) { toast(e.message); }
+    else { S.lastExport = r; await loadState(); if (r.edits_dropped) toast(`${r.edits_dropped} edit(s) skipped: that request is no longer in the logs`); }
+  } catch (e) { S.exportFail = e.message || "The report could not be exported."; }
   S.exporting = false; render();
 }
 async function saveSettings(msg) {                  // persists every Settings field; used by Save and by each "Choose…" pick
@@ -396,6 +411,7 @@ document.addEventListener("click", async e => {
     case "load": syncForm(); await load(); break;
     case "preview": case "preview2": await makePreview(); break;
     case "export": await doExport(); break;
+    case "retryexp": await doExport(); break;
     case "togglecleared": S.showCleared = !S.showCleared; render(); break;
     case "confirmrev": { const g = S.dlg; if (g?.pick && g.ack) { S.disp[g.id] = g.pick; closeDlg(); render(); toast("Review recorded"); } break; }
     case "addterm": { const v = $("#term").value.trim(); if (v) { S.terms.push(v); await rescan(); } break; }

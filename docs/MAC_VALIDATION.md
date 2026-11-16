@@ -35,3 +35,10 @@ Run on the Mac after rebuilding (v0.4.0):
 1. Export a report with 30+ requests/commits. The PDF must open in Preview with **multiple US Letter pages** (⌘I → size 8.5 × 11 in), selectable/searchable text, 0.75in margins, no line cut at a page edge, table headers repeating, no heading alone at a page bottom.
 2. If export shows "HTML saved, PDF could not be created", send `~/Library/Application Support/WorkReceipt/pdf-last-error.txt` (stage + reason only). Stage `verify` means the print job produced a wrongly sized/clipped PDF (the file is deleted rather than shipped).
 3. Compare content with the HTML: same project, client, period, requests, commits, checks, sign-off block.
+
+
+## Round 5: PDF after the verifier fix (v0.5.1) — one procedure
+1. Rebuild, open, load the demo project, review all findings, Export. Expect a green card "Exported: HTML and PDF" with 3 buttons in one row and file names only.
+2. Open PDF: multi-page US Letter (⌘I in Preview), selectable text, margins, no cut lines. Open HTML and Show in Finder also work.
+3. If the card is amber ("HTML exported, PDF failed"): click "View technical details" and send me that text plus the one line in
+   `~/Library/Application Support/WorkReceipt/pdf-last-diag.txt` (flags/counts only: exists, size, signature, verifier, pages, exc, problem). That pinpoints the stage.

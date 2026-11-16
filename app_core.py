@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 import workreceipt as w
 
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 DISPOSITIONS = ("credential", "not_credential", "unsure")     # what the human decided; every choice keeps the value masked in the report
 MAX_ITEMISE = 400_000          # longer texts are reviewed as one group (no per-detection location or reveal)
 REVEAL_MAX = 2000
@@ -688,7 +688,7 @@ def export(opts, approved, title_edits, settings=None):
     _add_history({"project": ctx["project"], "repo": os.path.abspath(opts["repo"]), "period": ctx["period"], "html": path, "pdf": pdf,
                   "client": (opts.get("client") or "")[:80], "at": datetime.now().strftime("%Y-%m-%d %H:%M"), "requests": ctx["n_items"], "commits": ctx["n_commits"],
                   "checks": len(ctx["checks"]), "high_reviewed": len(high)})
-    return {"ok": True, "html_path": path, "pdf_path": pdf, "pdf_failed": bool(opts.get("pdf")) and not pdf, "pdf_error": LAST_PDF_ERROR if (opts.get("pdf") and not pdf) else "", "high_reviewed": len(high), "edits_applied": applied,
+    return {"ok": True, "html_path": path, "pdf_path": pdf, "html_name": os.path.basename(path), "pdf_name": os.path.basename(pdf) if pdf else "", "pdf_failed": bool(opts.get("pdf")) and not pdf, "pdf_error": LAST_PDF_ERROR if (opts.get("pdf") and not pdf) else "", "high_reviewed": len(high), "edits_applied": applied,
             "edits_dropped": dropped, "html": html}
 
 
@@ -726,8 +726,10 @@ def to_pdf(html_path):
             LAST_PDF_ERROR = (str(ex) if type(ex).__name__ == "PdfError" else type(ex).__name__)[:300]
             _log_pdf_error(LAST_PDF_ERROR)
             return None
-        if os.path.exists(pdf) and os.path.getsize(pdf) > 0:
+        if _pdf_ok(pdf):
             return pdf
+        LAST_PDF_ERROR = "verify: the PDF file is missing or not a valid PDF"
+        _log_pdf_error(LAST_PDF_ERROR)
         _rm(pdf)
         return None
     chrome = chrome_path()
@@ -741,7 +743,18 @@ def to_pdf(html_path):
         return None
     finally:
         shutil.rmtree(prof, ignore_errors=True)
-    return pdf if os.path.exists(pdf) else None
+    if _pdf_ok(pdf):
+        return pdf
+    _rm(pdf)
+    return None
+
+
+def _pdf_ok(path):
+    try:
+        with open(path, "rb") as f:
+            return os.path.getsize(path) > 100 and f.read(5) == b"%PDF-"
+    except OSError:
+        return False
 
 
 def _log_pdf_error(reason):

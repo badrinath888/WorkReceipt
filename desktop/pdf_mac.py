@@ -44,9 +44,11 @@ def render_pdf(html, out_path, timeout=TIMEOUT):
             raise PdfError("timeout", f"no result after {timeout}s (stuck at: {job.stage})")
         if job.error:
             raise PdfError(job.stage, job.error)
-        if not valid_pdf(out_path):
-            raise PdfError("verify", "the PDF file was empty or invalid")
-        problem = verify_layout(out_path)
+        diag = inspect_pdf(out_path)
+        _write_diag(diag)
+        if not diag["signature"] or diag["size"] <= 100:
+            raise PdfError("verify", f"WebKit wrote no valid PDF (file exists: {diag['exists']}, {diag['size']} bytes, signature ok: {diag['signature']})")
+        problem = diag.get("problem")
         if problem:
             raise PdfError("verify", problem)
     finally:
@@ -66,16 +68,71 @@ LETTER = (612.0, 792.0)
 MARGIN_PT = 54.0                                                     # 0.75in
 
 
-def verify_layout(path):
-    """Return None if the PDF looks right, else a short non-sensitive problem description. Needs PyObjC/PDFKit (macOS)."""
+def _bytes_facts(path):
+    """Pure-Python page count and MediaBoxes (works for plain page objects; None when pages sit in compressed object streams)."""
+    import re
+    with open(path, "rb") as f:
+        data = f.read()
+    pages = len(re.findall(rb"/Type\s*/Page(?![A-Za-z])", data))
+    boxes = []
+    for m in re.finditer(rb"/MediaBox\s*\[\s*([-0-9.\s]+?)\s*\]", data):
+        v = [float(x) for x in m.group(1).split()]
+        if len(v) == 4:
+            boxes.append((v[2] - v[0], v[3] - v[1]))
+    return (pages, boxes) if pages else None
+
+
+def inspect_pdf(path):
+    """Privacy-safe diagnostics + layout verdict. Never raises, never reads content out. A verifier that cannot run is
+    reported as 'unverified' and does NOT reject a structurally valid PDF; only a positively detected defect does."""
+    d = {"exists": False, "size": 0, "signature": False, "readable": False, "verifier": "none", "pages": None, "exc": "", "problem": None}
     try:
+        d["exists"] = os.path.isfile(path)
+        d["size"] = os.path.getsize(path) if d["exists"] else 0
+        with open(path, "rb") as f:
+            d["signature"] = f.read(5) == b"%PDF-"
+        d["readable"] = True
+    except OSError as e:
+        d["exc"] = type(e).__name__
+        return d
+    if not d["signature"] or d["size"] <= 100:
+        return d
+    try:                                                             # 1) PDFKit
         from Quartz import PDFDocument, kPDFDisplayBoxMediaBox
+        doc = PDFDocument.alloc().initWithURL_(_url(path))
+        if doc is None or doc.pageCount() < 1:
+            raise RuntimeError("pdfkit-empty")
+        n = doc.pageCount()
+        d["verifier"], d["pages"] = "pdfkit", int(n)
+        d["problem"] = check_pages(n, lambda i: _page_facts(doc.pageAtIndex_(i), kPDFDisplayBoxMediaBox))
+        return d
+    except Exception as e:                                           # noqa: BLE001
+        d["exc"] = type(e).__name__
+    try:                                                             # 2) byte-level fallback
+        f = _bytes_facts(path)
+        if f:
+            pages, boxes = f
+            d["verifier"], d["pages"] = "bytes", pages
+            bad = [b for b in boxes if abs(b[0] - LETTER[0]) > 2 or abs(b[1] - LETTER[1]) > 2]
+            if bad:
+                d["problem"] = f"page size {bad[0][0]:.0f}x{bad[0][1]:.0f}pt is not US Letter"
+        else:
+            d["verifier"] = "unverified"
+    except Exception as e:                                           # noqa: BLE001
+        d["verifier"] = "unverified"; d["exc"] = d["exc"] or type(e).__name__
+    return d
+
+
+def _write_diag(d):
+    """<app data>/pdf-last-diag.txt: counts and flags only."""
+    try:
+        import app_core as core
+        os.makedirs(core._home(), exist_ok=True)
+        line = " ".join(f"{k}={d.get(k)}" for k in ("exists", "size", "signature", "readable", "verifier", "pages", "exc", "problem"))
+        with open(os.path.join(core._home(), "pdf-last-diag.txt"), "w", encoding="utf-8") as f:
+            f.write(line + "\n")
     except Exception:                                                # noqa: BLE001
-        return None                                                  # cannot verify off-macOS; callers/tests cover the logic separately
-    doc = PDFDocument.documentWithURL_(_url(path)) if hasattr(PDFDocument, "documentWithURL_") else None
-    if doc is None or doc.pageCount() < 1:
-        return "the PDF could not be read back"
-    return check_pages(doc.pageCount(), lambda i: _page_facts(doc.pageAtIndex_(i), kPDFDisplayBoxMediaBox))
+        pass
 
 
 def _url(path):
