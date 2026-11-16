@@ -42,3 +42,12 @@ Run on the Mac after rebuilding (v0.4.0):
 2. Open PDF: multi-page US Letter (⌘I in Preview), selectable text, margins, no cut lines. Open HTML and Show in Finder also work.
 3. If the card is amber ("HTML exported, PDF failed"): click "View technical details" and send me that text plus the one line in
    `~/Library/Application Support/WorkReceipt/pdf-last-diag.txt` (flags/counts only: exists, size, signature, verifier, pages, exc, problem). That pinpoints the stage.
+
+
+## Round 6: Client-Safe Mode (v0.6.0) — Mac-only checks
+Blocked on Linux: PDFKit `extract_facts`, WKWebView PDF of the client report, native open/Finder.
+1. Load demo, review all findings. Studio opens in Client-Safe (banner visible). Add an item, Approve, Preview, Review sharing (tick box), Confirm, Export.
+2. Expect "HTML and PDF"; names start `client-report-`. Open PDF in Preview: ⌘F finds your item text; ⌘I shows no author/title beyond the project name.
+3. Edit an item after approval: Export disables and approval clears.
+4. If export says it could not verify the PDF, the Mac inspector failed: send the reason code shown (no content).
+5. Developer tab: export is marked PRIVATE.

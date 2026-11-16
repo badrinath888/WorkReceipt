@@ -65,3 +65,8 @@ NOT tested: any macOS run, real pywebview/WKWebView window (bridge only stubbed)
 - Fix: `alloc().initWithURL_`; verifier failures fall back to a byte-level page/MediaBox check; a verifier that cannot run => "unverified", never a rejection. Only positive defects (bad signature, wrong page size, clipped text, no text) reject. `pdf-last-diag.txt` (flags only) written every attempt; core re-validates the PDF signature for every backend.
 - UI: compact export card with success / partial (warning, no PDF actions, optional technical details) / failure (retry) states, file names only, no paths.
 - Not verified on macOS. See MAC_VALIDATION.md Round 5.
+
+
+## v0.6.0 — Client-Safe Mode
+- See docs/CLIENT_SAFE_MODE.md. New `client_safe.py`, `/api/client/*`, Report Studio client flow (default), developer reports marked PRIVATE, history records carry `mode`.
+- 295 tests pass on Linux (229 baseline + 66 new). NOT verified on macOS (MAC_VALIDATION.md Round 6).
