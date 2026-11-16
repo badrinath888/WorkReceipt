@@ -90,8 +90,8 @@ class Association(Base):
                   _e("assistant", [{"type": "tool_use", "id": "e", "name": "Edit", "input": {"file_path": "src/a.py"}}], "2026-11-05T09:10:00Z", cwd=self.repo),
                   _tu("b", "npm test", "2026-11-05T09:20:00Z"), _tr("b", "ok", None, "2026-11-05T09:20:05Z")])
         h = self.run_()[0]
-        self.assertRegex(h, r"pytest -q</code> — <span class=ok>no error reported</span> <span class=unk>\(files were edited after this check; not re-run since\)")
-        self.assertRegex(h, r"npm test</code> — <span class=ok>no error reported</span></li>")
+        self.assertRegex(h, r"pytest -q</code><span class=note>Files were edited after this check; not re-run since.</span></td><td[^>]*><span class='chip ok'>No error reported")
+        self.assertRegex(h, r"npm test</code></td><td[^>]*><span class='chip ok'>No error reported</span></td>")
 
     def test_tool_use_result_records_are_not_requests(self):
         self.put([_e("user", "Output text that looks like a prompt", toolUseResult={"stdout": "x"}), _e("user", "Real ask")])
@@ -105,10 +105,10 @@ class Results(Base):
                   _tu("c", "make test"), _tr("c", "Exit code: 0"), _tr("zzz", "Exit code 1", True),   # result for an unknown id
                   _tu("d", "npm run lint"), _tr("d", "ok", False)])
         h = self.run_()[0]
-        self.assertRegex(h, r"pytest</code> — <span class=unk>result not recorded")
-        self.assertRegex(h, r"ruff check \.</code> — <span class=bad>failed")
-        self.assertRegex(h, r"make test</code> — <span class=ok>no error reported")
-        self.assertRegex(h, r"npm run lint</code> — <span class=ok>no error reported")
+        self.assertRegex(h, r"pytest</code></td><td[^>]*><span class='chip unk'>Result not recorded")
+        self.assertRegex(h, r"ruff check \.</code></td><td[^>]*><span class='chip bad'>Failed")
+        self.assertRegex(h, r"make test</code></td><td[^>]*><span class='chip ok'>No error reported")
+        self.assertRegex(h, r"npm run lint</code></td><td[^>]*><span class='chip ok'>No error reported")
         self.assertNotIn(">passed<", h)
 
 
@@ -188,7 +188,7 @@ class Html(Base):
         out = self.run_("--client", evil, "--author", evil)[0]
         p = Tags(); p.feed(out)
         self.assertEqual(p.bad, [])
-        self.assertTrue(p.seen <= {"meta", "title", "style", "h1", "h2", "div", "b", "ol", "ul", "li", "span", "p", "code"}, p.seen)
+        self.assertTrue(p.seen <= {"meta", "title", "style", "h1", "h2", "div", "b", "ol", "ul", "li", "span", "p", "code", "table", "thead", "tbody", "tr", "th", "td"}, p.seen)
         self.assertIn("Content-Security-Policy", out)
 
     def test_empty_report_is_well_formed(self):
@@ -234,7 +234,7 @@ class Review(Base):
         self.assertEqual([st for _, st in got], ["superseded", "superseded", "edited", "possible", "current"])
         h = self.run_()[0]
         self.assertIn("2 were re-run later; 1 were followed by file edits and not re-run; 1 by shell commands that may have changed files and not re-run; 1 have no later change recorded", h)
-        self.assertEqual(h.count("(re-run later)"), 2); self.assertEqual(h.count("files were edited after"), 1)
+        self.assertEqual(h.count("Re-run later."), 2); self.assertEqual(h.count("Files were edited after"), 1)
 
     def test_no_later_change_means_no_flag(self):
         self.put([_e("assistant", [{"type": "tool_use", "id": "e", "name": "Edit", "input": {"file_path": os.path.join(self.repo, "z.py")}}], "2026-11-05T08:00:00Z", cwd=self.repo),
@@ -253,8 +253,8 @@ class Review(Base):
             ls += [_tu("t%d" % i, "pytest -k case%d" % i, "2026-11-05T09:%02d:00Z" % i), _tr("t%d" % i, "ok", None, "2026-11-05T09:%02d:30Z" % i)]
         self.put(ls)
         h = self.run_()[0]
-        self.assertIn("45 check command(s) recorded", h); self.assertIn("5 earliest check(s) are omitted", h)
-        self.assertIn("case44", h); self.assertNotIn("case0<", h)
+        self.assertIn("45 check command(s) recorded", h); self.assertNotIn("omitted", h)
+        self.assertIn("case44", h); self.assertIn("case0<", h)       # every recorded check is listed
 
     def test_preview_shows_masked_checks_without_secret(self):
         k = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"

@@ -52,3 +52,9 @@ NOT tested: any macOS run, real pywebview/WKWebView window (bridge only stubbed)
 - Native dialogs/open/Finder moved from pywebview JS bridge to local HTTP `/api/native/*` (see INTERACTION_AUDIT.md). Menu uses `run_js`. `desktop-diag.json` + Settings → Diagnostics added.
 - `test_interaction_audit.py` exercises every screen with real clicks; 69 matrix rows: PASS 60, FAIL 0, BLOCKED 9 (macOS-only). 201 tests pass on Linux.
 - NOT verified on macOS: the real native host, Cocoa dialogs, Finder/open, PDF, menu bar, drag-drop. Procedure: MAC_VALIDATION.md Round 3.
+
+
+## v0.5.0 — premium HTML/PDF report redesign
+- New report layout (docs/PDF_DESIGN.md), no truncation, print-first pagination CSS. Mac PDF: slicing fallback removed, PDFKit verify added.
+- test_pdf_quality.py renders real PDFs (short 2p, medium 7p, long 159p, long-strings, empty, mixed, redaction, colours) and checks every page. Old markup-bound tests updated.
+- NOT verified: packaged macOS PDF generation (see MAC_VALIDATION.md Round 4).

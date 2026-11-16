@@ -160,10 +160,10 @@ class Regress(unittest.TestCase):
                   tu("d", "make test"), tr("d", [{"type": "text", "text": "Exit code: 2"}]), tu("e", "ruff check .")])
         h = self.run_()[0]
         self.assertNotIn("git commit", h)
-        self.assertRegex(h, r"pytest -q</code> — <span class=ok>no error reported")
-        self.assertRegex(h, r"npm run build</code> — <span class=bad>failed")
-        self.assertRegex(h, r"make test</code> — <span class=bad>failed")
-        self.assertRegex(h, r"ruff check \.</code> — <span class=unk>result not recorded")
+        self.assertRegex(h, r"pytest -q</code></td><td[^>]*><span class='chip ok'>No error reported")
+        self.assertRegex(h, r"npm run build</code></td><td[^>]*><span class='chip bad'>Failed")
+        self.assertRegex(h, r"make test</code></td><td[^>]*><span class='chip bad'>Failed")
+        self.assertRegex(h, r"ruff check \.</code></td><td[^>]*><span class='chip unk'>Result not recorded")
 
     def test_non_git_warns_and_dirnames_redacted(self):
         shutil_ = __import__("shutil"); shutil_.rmtree(os.path.join(self.repo, ".git"))

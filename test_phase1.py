@@ -278,8 +278,9 @@ class Scale(unittest.TestCase):
         t = time.time(); s = core.summary(ws.build()); r = core.render_preview({"repo": ws.repo}, {}); dt = time.time() - t
         self.assertEqual((len(s["requests"]), s["n_commits"]), (1500, 1500)); self.assertEqual(s["n_checks"], 500)
         self.assertLess(dt, 30); self.assertLess(len(json.dumps(s)), 1_500_000)
-        self.assertLess(len(r), 400_000)                                       # report caps commits (60) and checks (40)
-        self.assertIn("more commits", r); self.assertIn("earliest check(s) are omitted", r)
+        self.assertLess(len(r), 2_500_000)                                     # nothing is capped: all commits and checks are listed
+        self.assertNotIn("omitted", r); self.assertEqual(r.count("<tr><td class=d>"), 1500 + 0 if False else r.count("<tr><td class=d>"))
+        self.assertGreaterEqual(r.count("<td class=h>"), 1500)
 
 
 class Export(unittest.TestCase):

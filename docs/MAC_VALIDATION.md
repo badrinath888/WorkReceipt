@@ -29,3 +29,9 @@ Run on the Mac after rebuilding (v0.4.0):
 4. Menu bar File/View items and ⌘O/⌘R/⌘P/⌘E/⌘1–5/⌘, work.
 5. Export a report (review all high items first): HTML and PDF are created; **Open report**, **PDF**, **Show in Finder** work from Studio and Reports; delete the file, then Open → "no longer exists" toast.
 6. Resize/fullscreen, ⌘Q leaves no running process (`pgrep -fl WorkReceipt`).
+
+
+## Round 4: PDF (v0.5.0) — Mac-only checks
+1. Export a report with 30+ requests/commits. The PDF must open in Preview with **multiple US Letter pages** (⌘I → size 8.5 × 11 in), selectable/searchable text, 0.75in margins, no line cut at a page edge, table headers repeating, no heading alone at a page bottom.
+2. If export shows "HTML saved, PDF could not be created", send `~/Library/Application Support/WorkReceipt/pdf-last-error.txt` (stage + reason only). Stage `verify` means the print job produced a wrongly sized/clipped PDF (the file is deleted rather than shipped).
+3. Compare content with the HTML: same project, client, period, requests, commits, checks, sign-off block.

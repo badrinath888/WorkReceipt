@@ -16,7 +16,7 @@ import workreceipt as w  # noqa: E402
 BENIGN_TYPES = {"user", "assistant", "summary", "system", "file-history-snapshot"}
 META_KEYS = {"timestamp", "uuid", "parentUuid", "sessionId", "cwd", "version", "gitBranch", "requestId", "leafUuid", "type"}
 NAME_RX = re.compile(r"[A-Za-z_][A-Za-z0-9_.:-]{0,40}")
-HEADINGS = ["Work requested", "Changes delivered", "Verification", "Human review", "Basis of this report", "Privacy"]
+HEADINGS = ["Work requested", "Changes delivered", "Verification", "Human review and sign-off", "Basis of this report", "Privacy"]
 LIKELY_FP = {"variable/env reference", "placeholder/test-like", "letters only"}
 
 
@@ -285,13 +285,13 @@ def main():
     # 4. report separation audit
     if not doc: add("FAIL", "report generation", f"exit {rc}")
     else:
-        heads = re.findall(r"<h2>(.*?)</h2>", doc)
+        heads = [re.sub(r"^\d+", "", re.sub(r"<[^>]+>", "", h)) for h in re.findall(r"<h2[^>]*>(.*?)</h2>", doc)]
         add("PASS" if heads == HEADINGS else "FAIL", "section order", " > ".join(heads))
         need = ["does not mean the work was completed", "were not re-run", "Git is the evidence" if g[0] else "No commits found"]
         miss = [n for n in need if n not in doc]
         add("PASS" if not miss else "FAIL", "disclaimers present for requests / git / checks", f"missing {len(miss)}")
         add("PASS" if ">passed<" not in doc else "FAIL", "no check labelled 'passed'")
-        nreq = len(re.findall(r"<li><span contenteditable>", doc)); card = int(re.search(r"<b>(\d+)</b>work requests", doc).group(1))
+        nreq = len(re.findall(r"<div class=req>", doc)); card = int(re.search(r"<b>(\d+)</b>work requests", doc).group(1))
         add("PASS" if nreq == card == sum(len(s["prompts"]) for s in sessions) else "FAIL", "request list = request card = kept requests", f"{nreq}/{card}")
     verdict = "FAIL" if flags["FAIL"] else "NEEDS REVIEW" if flags["REVIEW"] else "PASS"
     L.append(f"OVERALL: {verdict}")

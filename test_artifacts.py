@@ -35,7 +35,7 @@ class Artifacts(unittest.TestCase):
     def items(self, lines):
         self.put(lines)
         h = self.report()[0]
-        return [re.sub(r"&[a-z]+;", "", t) for t in re.findall(r"<li><span contenteditable>(.*?)</span> <span class=small>\(", h)]
+        return [re.sub(r"&[a-z]+;", "", t) for t in re.findall(r"<span contenteditable>(.*?)</span><span class=dt>", h)]
 
     # --- artifacts that must disappear ---
     def test_empty_paste_markers_dropped(self):

@@ -15,7 +15,7 @@ sys.path.insert(0, HERE)
 import workreceipt as w  # noqa: E402
 
 SYSTEM_TAG_RX = re.compile(r"&lt;(?:task-notification|system-reminder|command-|local-command|bash-|ide_|user-prompt-submit|pasted_content)", re.I)
-ALLOWED = {"meta", "title", "style", "h1", "h2", "div", "b", "ol", "ul", "li", "span", "p", "code"}
+ALLOWED = {"meta", "title", "style", "h1", "h2", "div", "b", "ol", "ul", "li", "span", "p", "code", "table", "thead", "tbody", "tr", "th", "td"}
 
 
 class _Tags(html.parser.HTMLParser):

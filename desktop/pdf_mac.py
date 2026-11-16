@@ -4,9 +4,12 @@ Input is the already-redacted exported HTML. The page gets no JavaScript, no bas
 is written to disk except the final PDF. Every failure raises PdfError carrying the stage that failed and a NON-SENSITIVE reason
 (our own text or a system error description, never document content); core.to_pdf records it so the user can see what broke.
 
-Pipeline (each step is checked; the next is tried only if the previous cannot produce a valid PDF):
-  load -> 1. paginated print job (NSPrintOperation, proper Letter pages)
-       -> 2. fallback: whole-page createPDF sliced into Letter-proportioned pages with PDFKit.
+Pipeline: load -> paginated print job (NSPrintOperation: Letter, 0.75in margins, WebKit honours the report's print CSS: keep-together
+rows, repeating table headers, no stranded headings) -> verify (PDFKit: page count, every page Letter-sized, text selectable, no text
+outside the margins). There is deliberately NO fallback that slices a one-page render: that produced cut lines and was removed. If the print
+job or verification fails the file is deleted and a PdfError with the failing stage is raised; the HTML export is kept by the caller.
+Known unknowns (cannot be tested on Linux): how WKWebView maps CSS px to the print view width, and whether it honours @page margin
+boxes (page numbers). The verify step catches a clipped or wrongly sized result instead of shipping it.
 Bugs fixed vs the first version, found by review (the Linux dev environment cannot run WebKit; confirm on a Mac):
   * the navigation delegate and window were only referenced from a local closure; WKWebView holds its delegate weakly, so they could
     be garbage-collected and didFinishNavigation never fired (timeout). Jobs are now held in a module-level set until finished;
@@ -14,7 +17,7 @@ Bugs fixed vs the first version, found by review (the Linux dev environment cann
   * the print operation's view had a zero frame, and the offscreen window was never ordered in, which can make the job fail;
   * the print-callback selector signature was malformed and the delegate was stored as an attribute of a PyObjC proxy.
 """
-import math, os, threading
+import os, threading
 
 TIMEOUT = 90
 _JOBS = set()                                   # strong references while a job is running (WKWebView only holds its delegate weakly)
@@ -43,6 +46,9 @@ def render_pdf(html, out_path, timeout=TIMEOUT):
             raise PdfError(job.stage, job.error)
         if not valid_pdf(out_path):
             raise PdfError("verify", "the PDF file was empty or invalid")
+        problem = verify_layout(out_path)
+        if problem:
+            raise PdfError("verify", problem)
     finally:
         job.abort()
         _JOBS.discard(job)
@@ -56,6 +62,53 @@ def valid_pdf(path):
         return False
 
 
+LETTER = (612.0, 792.0)
+MARGIN_PT = 54.0                                                     # 0.75in
+
+
+def verify_layout(path):
+    """Return None if the PDF looks right, else a short non-sensitive problem description. Needs PyObjC/PDFKit (macOS)."""
+    try:
+        from Quartz import PDFDocument, kPDFDisplayBoxMediaBox
+    except Exception:                                                # noqa: BLE001
+        return None                                                  # cannot verify off-macOS; callers/tests cover the logic separately
+    doc = PDFDocument.documentWithURL_(_url(path)) if hasattr(PDFDocument, "documentWithURL_") else None
+    if doc is None or doc.pageCount() < 1:
+        return "the PDF could not be read back"
+    return check_pages(doc.pageCount(), lambda i: _page_facts(doc.pageAtIndex_(i), kPDFDisplayBoxMediaBox))
+
+
+def _url(path):
+    from Foundation import NSURL
+    return NSURL.fileURLWithPath_(path)
+
+
+def _page_facts(page, box):
+    r = page.boundsForBox_(box)
+    s = page.string() or ""
+    xs = []
+    for k in range(0, len(s), 5):                                    # sample glyph positions
+        b = page.characterBoundsAtIndex_(k)
+        if b.size.width > 0:
+            xs.append((b.origin.x, b.origin.x + b.size.width))
+    return (r.size.width, r.size.height), len(s.strip()), (min(x[0] for x in xs), max(x[1] for x in xs)) if xs else None
+
+
+def check_pages(n, facts):
+    """Pure logic (unit-tested on Linux). facts(i) -> ((w, h), text_chars, (min_x, max_x) | None)."""
+    total_text = 0
+    for i in range(n):
+        (w, h), chars, xr = facts(i)
+        if abs(w - LETTER[0]) > 2 or abs(h - LETTER[1]) > 2:
+            return f"page {i + 1} is {w:.0f}x{h:.0f}pt, not US Letter"
+        total_text += chars
+        if xr and (xr[0] < MARGIN_PT - 12 or xr[1] > LETTER[0] - MARGIN_PT + 12):
+            return f"text on page {i + 1} runs into the page margin"
+    if total_text < 20:
+        return "the PDF has no selectable text"
+    return None
+
+
 def _describe(e):
     """Short, non-sensitive text for an exception or NSError."""
     d = getattr(e, "localizedDescription", None)
@@ -66,7 +119,8 @@ def _describe(e):
 
 
 class _Job:
-    W, H = 816, 1056                                                 # Letter at 96 dpi
+    W, H = 816, 1056                                                 # offscreen window: Letter at 96 dpi
+    PW, PH = 672, 912                                                # print view: Letter minus 0.75in margins, in CSS px
 
     def __init__(self, html, out_path):
         self.html, self.out, self.stage, self.error = html, out_path, "start", None
@@ -126,8 +180,8 @@ class _Job:
         try:
             self.stage = "print"
             self._print_job()
-        except Exception:                                            # noqa: BLE001
-            self._slice_fallback()
+        except Exception as e:                                       # noqa: BLE001
+            self.fail(e, "print")
 
     def _print_job(self):
         from AppKit import NSPrintInfo, NSPrintSaveJob, NSPrintJobDisposition, NSPrintJobSavingURL
@@ -136,8 +190,10 @@ class _Job:
         info = NSPrintInfo.sharedPrintInfo().copy()
         info.setJobDisposition_(NSPrintSaveJob)
         info.dictionary()[NSPrintJobSavingURL] = NSURL.fileURLWithPath_(self.out)
+        from Foundation import NSMakeSize
+        info.setPaperSize_(NSMakeSize(*LETTER))
         for side in ("Top", "Bottom", "Left", "Right"):
-            getattr(info, f"set{side}Margin_")(36)
+            getattr(info, f"set{side}Margin_")(MARGIN_PT)
         try:
             from AppKit import NSAutoPagination
             info.setHorizontalPagination_(NSAutoPagination)
@@ -145,7 +201,7 @@ class _Job:
         except Exception:                                            # noqa: BLE001
             pass
         op = self.wv.printOperationWithPrintInfo_(info)
-        op.view().setFrame_(NSMakeRect(0, 0, self.W, self.H))        # a zero-sized print view yields no output
+        op.view().setFrame_(NSMakeRect(0, 0, self.PW, self.PH))      # a zero-sized print view yields no output
         op.setShowsPrintPanel_(False)
         op.setShowsProgressPanel_(False)
         self.pdone = _classes()["PrintDone"].alloc().init()
@@ -155,47 +211,7 @@ class _Job:
     def printed(self, ok):
         if ok and valid_pdf(self.out):
             return self.finish()
-        self._slice_fallback()
-
-    def _slice_fallback(self):
-        try:
-            self.stage = "render"
-            _rm(self.out)
-            from WebKit import WKPDFConfiguration
-
-            def handler(data, error):
-                try:
-                    if error is not None or data is None:
-                        return self.fail(error or "WebKit returned no data", "render")
-                    self.stage = "paginate"
-                    self._write_sliced(data)
-                    self.finish()
-                except Exception as e:                               # noqa: BLE001
-                    self.fail(e, "paginate")
-            self.wv.createPDFWithConfiguration_completionHandler_(WKPDFConfiguration.alloc().init(), handler)
-        except Exception as e:                                       # noqa: BLE001
-            self.fail(e, "render")
-
-    def _write_sliced(self, data):
-        from Foundation import NSMakeRect
-        from Quartz import PDFDocument, kPDFDisplayBoxCropBox, kPDFDisplayBoxMediaBox
-        src = PDFDocument.alloc().initWithData_(data)
-        if src is None or src.pageCount() < 1:
-            raise RuntimeError("WebKit produced an unreadable PDF")
-        page = src.pageAtIndex_(0)
-        r = page.boundsForBox_(kPDFDisplayBoxMediaBox)
-        w, h = r.size.width, r.size.height
-        ph = w * 11.0 / 8.5
-        n = max(1, int(math.ceil(h / ph - 1e-6)))
-        out = PDFDocument.alloc().init()
-        for k in range(n):
-            p = page.copy()
-            box = NSMakeRect(r.origin.x, r.origin.y + h - (k + 1) * ph, w, ph)    # slices run top to bottom
-            p.setBounds_forBox_(box, kPDFDisplayBoxMediaBox)
-            p.setBounds_forBox_(box, kPDFDisplayBoxCropBox)
-            out.insertPage_atIndex_(p, k)
-        if not out.writeToFile_(self.out):
-            raise RuntimeError("could not write the PDF file")
+        self.fail("the print job did not produce a PDF", "print")
 
 
 def _rm(path):

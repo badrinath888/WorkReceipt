@@ -458,19 +458,50 @@ def git_summary(repo, since, until, author=None):
 
 
 # ---------- render ----------
+# One stylesheet serves the on-screen preview, the exported HTML and the PDF. Print rules (Letter, 0.75in margins, keep-together rows,
+# repeating table headers, running footer where the renderer supports page-margin boxes) are what the PDF pagination relies on.
 CSS = """
-body{font:15px/1.55 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:860px;margin:2rem auto;padding:0 1.2rem;color:#1c2330}
-h1{font-size:1.7rem;margin:.2rem 0}h2{font-size:1.15rem;margin:2rem 0 .6rem;border-bottom:1px solid #d9dee7;padding-bottom:.3rem}
-.meta{color:#5a6577}.cards{display:flex;gap:.8rem;flex-wrap:wrap;margin:1rem 0}
-.card{flex:1;min-width:130px;border:1px solid #d9dee7;border-radius:8px;padding:.7rem .9rem}.card b{display:block;font-size:1.4rem}
-li{margin:.35rem 0}code{background:#f2f4f8;padding:.1rem .35rem;border-radius:4px;font-size:.88em;word-break:break-all}
-.ok{color:#14803c}.bad{color:#b42318}.unk{color:#8a6d00}.box{border:1px solid #d9dee7;border-radius:8px;padding:.8rem 1rem;background:#fafbfd}
+:root{--ink:#1d2430;--mute:#5b6676;--line:#dde2ea;--teal:#0f766e;--teal-bg:#e8f4f2;--ok:#166534;--bad:#b42318;--warn:#8a5a00;--soft:#f6f8fa}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{font:10pt/1.42 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;color:var(--ink);max-width:8.5in;margin:0 auto;padding:.6in .75in;overflow-wrap:anywhere;orphans:3;widows:3}
+.brand{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid var(--teal);padding-bottom:6pt;margin-bottom:12pt}
+.brand b{color:var(--teal);font-size:11pt;letter-spacing:.04em}.brand span{color:var(--mute);font-size:9pt;text-transform:uppercase;letter-spacing:.08em}
+h1{font-size:22pt;line-height:1.2;margin:0 0 4pt;letter-spacing:-.01em;font-weight:650}
+.ident{display:grid;grid-template-columns:repeat(2,1fr);gap:3pt 24pt;margin:8pt 0 10pt;font-size:9.5pt}
+.ident div{display:flex;gap:8pt}.ident dt,.ident .k{color:var(--mute);min-width:62pt}.ident .v{font-weight:550}
+.stats{display:grid;grid-template-columns:repeat(4,1fr) 1.5fr;border:1px solid var(--line);border-radius:6pt;margin:0 0 6pt;background:var(--soft);break-inside:avoid}
+.stat{padding:6pt 9pt;border-right:1px solid var(--line)}.stat:last-child{border-right:0}
+.stat b{display:block;font-size:14pt;line-height:1.2;white-space:nowrap;color:var(--teal);font-weight:650}.stat{font-size:8pt;color:var(--mute);text-transform:uppercase;letter-spacing:.05em}.stat b{text-transform:none;letter-spacing:0}
+h2{font-size:12pt;margin:13pt 0 3pt;padding-bottom:3pt;border-bottom:1px solid var(--line);color:var(--ink);break-after:avoid;page-break-after:avoid}
+h2 .n{color:var(--teal);margin-right:6pt}
+.lead{color:var(--mute);font-size:9pt;margin:2pt 0 5pt;break-after:avoid;page-break-after:avoid}
+.small{font-size:8.5pt;color:var(--mute)}
+.req{display:grid;grid-template-columns:20pt 1fr auto;gap:8pt;padding:3pt 0;border-bottom:1px solid #eef1f5;break-inside:avoid;page-break-inside:avoid}
+.req .no{color:var(--teal);font-weight:650;font-variant-numeric:tabular-nums}.req .dt{color:var(--mute);font-size:8.5pt;white-space:nowrap}
+table{width:100%;border-collapse:collapse;font-size:9.5pt}
+thead{display:table-header-group}
+th{white-space:nowrap;text-align:left;font-size:8pt;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);font-weight:600;padding:4pt 6pt;border-bottom:1px solid var(--line)}
+td{padding:2.5pt 6pt;border-bottom:1px solid #eef1f5;vertical-align:top}
+tr{break-inside:avoid;page-break-inside:avoid}
+td.d,td.h{white-space:nowrap;color:var(--mute);font-variant-numeric:tabular-nums;width:1%}td.h{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:8.5pt}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:8.5pt;background:var(--soft);padding:1pt 3pt;border-radius:3pt}
+.chip{display:inline-block;font-size:8pt;font-weight:600;padding:1pt 6pt;border-radius:8pt;border:1px solid currentColor;white-space:nowrap}
+.chip.ok{color:var(--ok);background:#ecf8f0}.chip.bad{color:var(--bad);background:#fdf0ee}.chip.unk{color:var(--warn);background:#fdf6e6}
+.note{color:var(--mute);font-size:8.5pt;display:block;margin-top:1pt}
+.sign{border:1px solid var(--line);border-radius:6pt;padding:6pt 12pt;background:var(--soft);break-inside:avoid;page-break-inside:avoid}
+.sign p{margin:5pt 0}.cb{display:inline-block;width:10pt;height:10pt;border:1.4pt solid var(--ink);border-radius:2pt;vertical-align:-1.5pt;margin-right:7pt}
+.line{display:inline-block;min-width:150pt;border-bottom:1px solid var(--ink);padding:0 4pt}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:0 22pt;break-inside:avoid;page-break-inside:avoid}.basis li{margin:2pt 0}.basis{padding-left:14pt;margin:4pt 0}
+.keep{break-inside:avoid;page-break-inside:avoid}
 [contenteditable]{outline:1px dashed #c4cbd8;outline-offset:2px;border-radius:3px}
-.small{font-size:.85rem;color:#5a6577}
-@page{margin:16mm}
-h2{break-after:avoid}li{break-inside:avoid}
-@media print{body{margin:0}[contenteditable]{outline:none}.noprint{display:none}}
+.foot{break-before:avoid;page-break-before:avoid;margin-top:8pt;padding-top:6pt;border-top:1px solid var(--line);font-size:8pt;color:var(--mute)}
+@page{size:letter;margin:.7in .75in .75in}
+@media print{body{max-width:none;padding:0;margin:0;font-size:10pt}[contenteditable]{outline:none}.noprint{display:none}}
+@media screen and (max-width:640px){.two{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.ident{grid-template-columns:1fr}body{padding:.4in .3in}}
 """
+# Chrome renders page-margin boxes; WKWebView printing ignores them (so the macOS PDF has no running footer).
+PRINT_FOOTER = "@page{@bottom-left{content:'WorkReceipt work report';font:8pt sans-serif;color:#5b6676}@bottom-right{content:'Page ' counter(page) ' of ' counter(pages);font:8pt sans-serif;color:#5b6676}}"
 
 
 def esc(s):
@@ -485,75 +516,80 @@ def first_line(t, n=110):
 def render(ctx):
     e = esc
     o = []
-    o.append(f"<!doctype html><meta charset=utf-8><meta http-equiv=Content-Security-Policy content=\"default-src 'none'; style-src 'unsafe-inline'\"><title>{e(ctx['title'])}</title><style>{CSS}</style>")
-    o.append(f"<h1>{e(ctx['title'])}</h1>")
-    o.append(f"<div class=meta>{e(ctx['project'])} · {e(ctx['period'])}"
-             f"{' · Prepared by ' + e(ctx['author']) if ctx['author'] else ''} · generated {e(ctx['generated'])}</div>")
-    o.append("<div class=cards>"
-             f"<div class=card><b>{ctx['n_items']}</b>work requests</div>"
-             f"<div class=card><b>{ctx['n_commits']}</b>commits</div>"
-             f"<div class=card><b>{ctx['n_files']}</b>files changed</div>"
-             f"<div class=card><b>+{ctx['ins']} / −{ctx['dele']}</b>lines</div></div>")
-    o.append("<h2>Work requested</h2>")
-    o.append("<p class=small>Requests given to the AI coding assistant during this period. A request listed here "
+    o.append(f"<!doctype html><meta charset=utf-8><meta http-equiv=Content-Security-Policy content=\"default-src 'none'; style-src 'unsafe-inline'\">"
+             f"<meta name=viewport content='width=device-width,initial-scale=1'><title>{e(ctx['title'])}</title><style>{CSS}{PRINT_FOOTER}</style>")
+    o.append("<div class=brand><b>WorkReceipt</b><span>Client work report</span></div>")
+    o.append(f"<h1>{e(ctx['title'])}</h1><div class=ident>"
+             f"<div><span class=k>Project</span><span class=v>{e(ctx['project'])}</span></div>"
+             f"<div><span class=k>Period</span><span class=v>{e(ctx['period'])}</span></div>"
+             + (f"<div><span class=k>Prepared by</span><span class=v>{e(ctx['author'])}</span></div>" if ctx["author"] else "")
+             + f"<div><span class=k>Generated</span><span class=v>{e(ctx['generated'])}</span></div></div>")
+    nchk = len(ctx["checks"]); ok = sum(1 for c in ctx["checks"] if c["ok"] is True)
+    o.append("<div class=stats>"
+             f"<div class=stat><b>{ctx['n_items']}</b>work requests</div>"
+             f"<div class=stat><b>{ctx['n_commits']}</b>commits</div>"
+             f"<div class=stat><b>{ctx['n_files']}</b>files changed</div>"
+             f"<div class=stat><b>+{ctx['ins']} / −{ctx['dele']}</b>lines</div>"
+             f"<div class=stat><b>{ok} / {nchk}</b>checks, no error</div></div>")
+    o.append("<p class=small>Counts come from the session logs and Git history for this period. Checks are commands recorded in the logs; they were not re-run for this report.</p>")
+    o.append("<h2><span class=n>1</span>Work requested</h2>")
+    o.append("<p class=lead>Requests given to the AI coding assistant during this period. A request listed here "
              "does not mean the work was completed; see Changes delivered and Verification below.</p>")
     if ctx["items"]:
-        o.append("<p class='small noprint'>Titles below are editable in your browser before you print or save as PDF.</p><ol>")
-        for it in ctx["items"]:
-            o.append(f"<li><span contenteditable>{e(it['title'])}</span> <span class=small>({e(it['date'])})</span></li>")
-        o.append("</ol>")
+        o.append("<p class='small noprint'>Titles below are editable in your browser before you print or save as PDF.</p>")
+        for i, it in enumerate(ctx["items"], 1):
+            o.append(f"<div class=req><span class=no>{i}</span><span contenteditable>{e(it['title'])}</span><span class=dt>{e(it['date'])}</span></div>")
     else:
         o.append("<p>No session activity found in this period.</p>")
-    o.append("<h2>Changes delivered</h2>")
+    o.append("<h2><span class=n>2</span>Changes delivered</h2>")
     if ctx["commits"]:
-        o.append(f"<p class=small>Commits in this repository's history during the period "
+        o.append(f"<p class=lead>All {ctx['n_commits']} commit(s) in this repository's history during the period "
                  f"({ctx['n_authors']} author(s){'; filtered by author' if ctx['git_filtered'] else ''}). Git is the evidence of delivered changes.</p>")
-        o.append("<ul>")
-        for _h, d, s in ctx["commits"][:60]:
-            o.append(f"<li><span class=small>{e(d)}</span> {e(s)}</li>")
-        o.append("</ul>")
-        if len(ctx["commits"]) > 60:
-            o.append(f"<p class=small>…and {len(ctx['commits']) - 60} more commits.</p>")
-        o.append("<p><b>Where the changes landed</b></p><ul>")
-        for d, n in ctx["dirs"][:12]:
-            o.append(f"<li><code>{e(d)}</code> — {n} file(s)</li>")
-        o.append("</ul>")
+        o.append("<table><thead><tr><th>Date</th><th>Commit</th><th>Summary</th></tr></thead><tbody>")
+        for h, d, s in ctx["commits"]:
+            o.append(f"<tr><td class=d>{e(d)}</td><td class=h>{e(str(h)[:7])}</td><td>{e(s)}</td></tr>")
+        o.append("</tbody></table>")
+        if ctx["dirs"]:
+            o.append("<p class='lead keep' style='margin-top:12pt'><b>Where the changes landed</b></p>")
+            o.append("<table><thead><tr><th>Folder</th><th>Files</th></tr></thead><tbody>")
+            for d, n in ctx["dirs"]:
+                o.append(f"<tr><td><code>{e(d)}</code></td><td class=d>{n}</td></tr>")
+            o.append("</tbody></table>")
     else:
         o.append("<p>No commits found in this period.</p>")
-    o.append("<h2>Verification</h2>")
-    o.append("<p class=small>Test, lint and build commands recorded in the session logs, with the outcome the tool recorded. "
+    o.append("<h2><span class=n>3</span>Verification</h2>")
+    o.append("<p class=lead>Test, lint and build commands recorded in the session logs, with the outcome the tool recorded. "
              "They were not re-run for this report.</p>")
     if ctx["checks"]:
         n = len(ctx["checks"]); cnt = Counter(c["ok"] for c in ctx["checks"]); st = Counter(c.get("state") for c in ctx["checks"])
-        o.append(f"<p class=small>{n} check command(s) recorded: {cnt[True]} no error reported, {cnt[False]} failed, "
+        o.append(f"<p class='small keep'>{n} check command(s) recorded: {cnt[True]} no error reported, {cnt[False]} failed, "
                  f"{cnt[None]} result not recorded. {st['superseded']} were re-run later; {st['edited']} were followed by file edits and not re-run; "
                  f"{st['possible']} by shell commands that may have changed files and not re-run; {st['current']} have no later change recorded.</p>")
-        if n > 40:
-            o.append(f"<p class=small>The {n - 40} earliest check(s) are omitted; the 40 most recent are listed.</p>")
-        o.append("<ul>")
-        for c in ctx["checks"][-40:]:
-            cls, label = {True: ("ok", "no error reported"), False: ("bad", "failed"), None: ("unk", "result not recorded")}[c["ok"]]
-            late = {"edited": " <span class=unk>(files were edited after this check; not re-run since)</span>",
-                    "possible": " <span class=small>(shell commands that may change files ran after this check; not re-run since)</span>",
-                    "superseded": " <span class=small>(re-run later)</span>"}.get(c.get("state"), "")
-            o.append(f"<li><code>{e(first_line(c['cmd'], 140))}</code> — <span class={cls}>{label}</span>{late}</li>")
-        o.append("</ul>")
+        o.append("<table><thead><tr><th>Command</th><th>Outcome</th></tr></thead><tbody>")
+        for c in ctx["checks"]:
+            cls, label = {True: ("ok", "No error reported"), False: ("bad", "Failed"), None: ("unk", "Result not recorded")}[c["ok"]]
+            late = {"edited": "Files were edited after this check; not re-run since.",
+                    "possible": "Shell commands that may change files ran after this check; not re-run since.",
+                    "superseded": "Re-run later."}.get(c.get("state"), "")
+            o.append(f"<tr><td><code>{e(first_line(c['cmd'], 140))}</code>{f'<span class=note>{late}</span>' if late else ''}</td>"
+                     f"<td style='white-space:nowrap;width:1%'><span class='chip {cls}'>{label}</span></td></tr>")
+        o.append("</tbody></table>")
     else:
         o.append("<p>No test, lint or build commands were recorded in this period.</p>")
-    o.append("<h2>Human review</h2><div class=box>"
-             "<p>☐ I reviewed the changes listed above before delivery.</p>"
-             "<p>☐ I ran the application / tests myself before delivery.</p>"
-             "<p>Notes: <span contenteditable>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>"
-             f"<p>Reviewer: <span contenteditable>{e(ctx['author'] or '__________')}</span> &nbsp; Date: <span contenteditable>__________</span></p></div>")
-    o.append("<h2>Basis of this report</h2><ul class=small>"
+    o.append("<h2><span class=n>4</span>Human review and sign-off</h2><div class=sign>"
+             "<p><span class=cb></span>I reviewed the changes listed above before delivery.</p>"
+             "<p><span class=cb></span>I ran the application / tests myself before delivery.</p>"
+             "<p>Notes: <span class=line contenteditable>&nbsp;</span></p>"
+             f"<p>Reviewer: <span class=line contenteditable>{e(ctx['author'] or '')}&nbsp;</span> &nbsp; Date: <span class=line contenteditable style='min-width:90pt'>&nbsp;</span></p></div>")
+    o.append("<div class=two><div><h2 class=keep><span class=n>5</span>Basis of this report</h2><ul class='basis small'>"
              "<li>Work requested: prompts typed by the developer in Claude Code sessions for this repository. Requests are not proof of completion.</li>"
              "<li>Changes delivered: commits from the repository history only. Session activity in other folders is excluded.</li>"
-             "<li>Verification: commands as recorded in the logs; &ldquo;no error reported&rdquo; means the tool recorded no error, not that coverage was adequate.</li></ul>")
-    o.append("<h2>Privacy</h2>")
+             "<li>Verification: commands as recorded in the logs; &ldquo;no error reported&rdquo; means the tool recorded no error, not that coverage was adequate.</li></ul></div>")
     total = sum(ctx["hits"].values())
-    o.append(f"<p class=small>Prompts and commands in this report were automatically scanned; {total} sensitive value(s) were masked "
-             "(secrets, tokens, emails, home paths, IP addresses). Automatic redaction is best-effort. Read this report before sending it.</p>")
-    o.append(f"<p class=small>Prepared with AI-assisted development tools (Claude Code). Session logs and repository history are the source for this report.</p>")
+    o.append("<div><h2><span class=n>6</span>Privacy</h2>")
+    o.append(f"<p class='small keep'>Prompts and commands in this report were automatically scanned; {total} sensitive value(s) were masked "
+             "(secrets, tokens, emails, home paths, IP addresses). Automatic redaction is best-effort. Read this report before sending it.</p>"
+             "<p class='small keep'>Prepared with AI-assisted development tools (Claude Code). Session logs and repository history are the source for this report.</p></div></div>")
     return "".join(o)
 
 
