@@ -1,0 +1,23 @@
+@font-face{font-family:"Bricolage Grotesque";src:url("../../assets/fonts/bricolage-grotesque-latin-wght-normal.woff2") format("woff2");font-weight:200 800}
+@font-face{font-family:"IBM Plex Mono";src:url("../../assets/fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2");font-weight:400}
+*{box-sizing:border-box;margin:0}
+html,body{width:1440px;height:810px;overflow:hidden}
+body{font-family:"Bricolage Grotesque",system-ui,sans-serif;color:#1b1c1a;background:radial-gradient(80% 90% at 15% 0%,rgba(13,139,127,.20),transparent 60%),radial-gradient(70% 80% at 100% 100%,rgba(176,120,0,.12),transparent 60%),#ece8dd;display:grid;place-items:center}
+.stage{width:1180px;display:grid;grid-template-columns:1.1fr .9fr;gap:70px;align-items:center}
+.logo{display:flex;align-items:center;gap:16px;animation:rise .8s cubic-bezier(.2,.7,.2,1) .15s both}
+.logo img{width:64px;height:64px}.logo b{font-size:44px;font-weight:650;letter-spacing:-.03em}
+h1{font-size:72px;line-height:1;font-weight:600;letter-spacing:-.045em;margin-top:38px;animation:rise .9s cubic-bezier(.2,.7,.2,1) .7s both}
+.sub{margin-top:26px;font-size:24px;line-height:1.45;color:#5a5952;max-width:540px;animation:rise .9s cubic-bezier(.2,.7,.2,1) 1.3s both}
+.tags{display:flex;gap:12px;margin-top:34px;animation:rise .9s cubic-bezier(.2,.7,.2,1) 1.9s both}
+.tags span{font:400 16px "IBM Plex Mono",monospace;padding:9px 14px;border:1px solid rgba(27,28,26,.2);border-radius:10px;background:rgba(253,251,247,.7)}
+.tags .t{color:#0a6f65;border-color:rgba(10,111,101,.4)}
+.slip{background:#fdfbf7;padding:28px 28px 52px;font:400 15px/1.75 "IBM Plex Mono",monospace;filter:drop-shadow(0 26px 26px rgba(27,28,26,.18));-webkit-mask:conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) 50%/18px 100%;animation:print 3.2s steps(32,end) 1s both}
+.slip .h{font-weight:600;font-size:18px}.slip hr{border:0;border-top:1px dashed rgba(27,28,26,.25);margin:10px 0}
+.slip dt{font-weight:500;margin-top:6px}.slip dd{display:flex;gap:8px;color:#5a5952}.slip dd::after{content:"";order:1;flex:1;border-bottom:1px dotted #8c8a80;transform:translateY(-6px)}
+.slip dd span:first-child{color:#1b1c1a}.slip dd span:last-child{order:2}.ok{color:#0a6f65}
+.slot{height:16px;background:#1b1c1a;border-radius:8px;position:relative;z-index:2;animation:rise .6s ease .5s both}
+.sl{margin:-6px 14px 0}
+@keyframes rise{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
+@keyframes print{from{clip-path:inset(0 0 100% 0)}to{clip-path:inset(0 0 0 0)}}
+.center{text-align:center;display:grid;justify-items:center}
+.center .logo{justify-content:center}

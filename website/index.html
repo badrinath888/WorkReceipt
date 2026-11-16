@@ -130,8 +130,20 @@
     <div class="head">
       <p class="eyebrow">Explore WorkReceipt</p>
       <h2>Five screens, one report.</h2>
-      <p class="lead">Every screen is a capture of WorkReceipt 0.5.1 running on a synthetic demo project.</p>
+      <p class="lead">Watch the whole flow in about 80 seconds, or click through each screen yourself. Everything shown is the real WorkReceipt 0.5.1 app running on a synthetic demo project.</p>
     </div>
+    <figure class="demo" id="demo" aria-label="WorkReceipt product demo video">
+      <video id="demoVideo" controls playsinline preload="none" poster="assets/demo/workreceipt-demo-poster.webp" width="1280" height="720" aria-describedby="demoNote">
+        <source src="assets/demo/workreceipt-demo.mp4" type="video/mp4">
+        <track kind="captions" srclang="en" label="English" src="assets/demo/workreceipt-demo.en.vtt" default>
+        <img src="assets/demo/workreceipt-demo-poster.jpg" alt="WorkReceipt Overview screen, from the product demo video" width="1280" height="720">
+        Your browser can't play this video. <a href="assets/demo/workreceipt-demo.mp4">Download the MP4</a>.
+      </video>
+      <button type="button" class="demo__play" id="demoPlay" aria-label="Play the WorkReceipt demo with sound"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg><span>Watch the demo <small>1:22, with narration and captions</small></span></button>
+      <button type="button" class="demo__badge" id="demoBadge" hidden>Muted preview. <u>Play with sound</u></button>
+      <figcaption id="demoNote">Real app recording on synthetic data, narrated by an AI voice (Kokoro, Apache-2.0) over original music. <a href="assets/demo/workreceipt-demo.en.vtt" download>Captions (WebVTT)</a> &middot; <a href="assets/demo/workreceipt-demo-captioned.mp4" download>MP4 with captions burned in</a> &middot; <a href="assets/demo/workreceipt-demo-transcript.txt">Transcript</a></figcaption>
+    </figure>
+    <h3 class="demo-alt">Or explore each screen yourself</h3>
     <div class="show">
       <div class="show__tabs" role="tablist" aria-label="WorkReceipt screens" aria-orientation="vertical">
         <button class="show__tab" role="tab" id="t-overview" aria-controls="p-overview" aria-selected="true"><b>Overview</b><span>See your projects, development activity and recently generated reports at a glance.</span></button>

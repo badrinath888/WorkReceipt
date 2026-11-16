@@ -129,4 +129,35 @@
     }, { rootMargin: '-25% 0px -65% 0px' });
     secs.forEach(function (s) { if (s) io.observe(s); });
   }
+
+  // demo video: lazy load, muted preview only when allowed, pause when out of view or tab hidden
+  var v = document.getElementById('demoVideo');
+  if (v) {
+    var box = document.getElementById('demo'), playBtn = document.getElementById('demoPlay'), badge = document.getElementById('demoBadge');
+    var userStarted = false, previewing = false;
+    var started = function () { box.classList.add('is-started'); };
+    playBtn.addEventListener('click', function () {            // deliberate play: from the start, with sound
+      userStarted = true; previewing = false; badge.hidden = true; v.muted = false; v.currentTime = 0; started();
+      v.play().catch(function () { v.controls = true; });
+    });
+    badge.addEventListener('click', function () { userStarted = true; previewing = false; badge.hidden = true; v.currentTime = 0; v.muted = false; v.play(); });
+    v.addEventListener('play', started);
+    v.addEventListener('volumechange', function () { if (!v.muted && previewing) { previewing = false; userStarted = true; badge.hidden = true; } });
+    v.addEventListener('pointerdown', function () { if (previewing) { userStarted = true; previewing = false; badge.hidden = true; } });
+    v.addEventListener('ended', function () { box.classList.remove('is-started'); badge.hidden = true; previewing = false; v.currentTime = 0; });
+    v.addEventListener('error', function () { box.classList.remove('is-started'); });
+    document.addEventListener('visibilitychange', function () { if (document.hidden && !v.paused) v.pause(); });
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (es) {                 // start loading shortly before the video scrolls into view
+        if (es[0].isIntersecting && v.preload === 'none') v.preload = 'metadata';
+      }, { rootMargin: '400px 0px' }).observe(box);
+      new IntersectionObserver(function (es) {
+        var inView = es[0].isIntersecting;
+        if (inView && !userStarted && !reduce.matches && v.paused && !v.ended && v.currentTime === 0) {
+          v.muted = true; previewing = true;
+          var pr = v.play(); if (pr && pr.then) pr.then(function () { badge.hidden = false; started(); }).catch(function () { previewing = false; });
+        } else if (!inView && !v.paused) { v.pause(); if (previewing) { previewing = false; badge.hidden = true; v.currentTime = 0; box.classList.remove('is-started'); } }
+      }, { threshold: 0.6 }).observe(box);
+    }
+  }
 })();

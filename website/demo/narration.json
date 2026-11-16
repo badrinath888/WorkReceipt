@@ -1,0 +1,59 @@
+{
+ "voice": "af_heart",
+ "speed": 1.0,
+ "scenes": [
+  {
+   "id": "intro",
+   "lines": [
+    "WorkReceipt turns your Claude Code sessions and Git history into a report your client can read."
+   ]
+  },
+  {
+   "id": "overview",
+   "lines": [
+    "Open WorkReceipt, and the Overview shows your projects, weekly session activity and exported reports at a glance."
+   ]
+  },
+  {
+   "id": "projects",
+   "lines": [
+    "Pick a project and name your client.",
+    "Then load its activity. WorkReceipt reads your sessions and Git history right here on your Mac."
+   ]
+  },
+  {
+   "id": "studio",
+   "lines": [
+    "Report Studio lists the work you requested beside the Git commits that back it up.",
+    "Every description is editable, so you can put it in words your client understands."
+   ]
+  },
+  {
+   "id": "privacy",
+   "lines": [
+    "Before anything is shared, the Privacy Center lists every masked value.",
+    "Export stays locked until you review each high severity finding yourself."
+   ]
+  },
+  {
+   "id": "export",
+   "lines": [
+    "Then export. WorkReceipt creates an HTML report and a PDF, both made on your computer."
+   ]
+  },
+  {
+   "id": "report",
+   "lines": [
+    "The finished report keeps work requested, changes delivered and recorded checks clearly apart.",
+    "A request is never presented as proof of completion.",
+    "Open the PDF, and your client has a clean, portable copy."
+   ]
+  },
+  {
+   "id": "outro",
+   "lines": [
+    "WorkReceipt. A receipt for your AI-assisted work. Private by design, built for your Mac."
+   ]
+  }
+ ]
+}
