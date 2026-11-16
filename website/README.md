@@ -1,4 +1,4 @@
-# WorkReceipt website: visual design prototype (M7, v2)
+# WorkReceipt website: visual design prototype (M7, v3)
 
 Design-approval prototype only. Not deployed, no checkout, no public download. The desktop app, report engine, PDF code and packaging are untouched.
 
@@ -10,7 +10,7 @@ Static HTML, CSS and JS. No build step, no dependencies.
     # or simply: open website/index.html
 
 ## Contents
-- `index.html`, `styles.css`, `script.js`
+- `index.html`, `questions/index.html` (separate Questions page), `styles.css`, `script.js`
 - `assets/product/*.webp`: captures of the real WorkReceipt v0.5.1 app run on `examples/make_demo_workspace.py` synthetic data, plus `examples/example_report.html`
 - `assets/fonts/`: Bricolage Grotesque and IBM Plex Mono (open-source, bundled), `assets/logo.svg` from the app icon
 - `screenshots/`: review captures
@@ -62,3 +62,9 @@ Buttons (solid ink, line, dashed disabled), floating nav, Mac window with synthe
 
 ### Breakpoints
 1020px (tablet: single-column sections, horizontal tabs), 860px (menu button), 640px (mobile: compact hero CTAs).
+
+## v3 changes
+- Explore WorkReceipt: five-screen interactive walkthrough (tabs, arrow keys, stacked panels so nothing jumps; mobile uses a zoomed crop plus a full-screen viewer).
+- Six illustrated feature cards (HTML/CSS/SVG) replace the text ledger.
+- FAQ moved off the homepage to `questions/` (open `questions/index.html` when using file://).
+- Nav now includes Questions; How it works is three static step cards.

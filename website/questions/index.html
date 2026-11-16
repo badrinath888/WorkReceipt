@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Questions · WorkReceipt</title>
+<meta name="description" content="Answers about what WorkReceipt is, what it needs, how it handles your data, and how reports work.">
+<meta name="theme-color" content="#f5f2ea">
+<meta name="robots" content="noindex">
+<link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../styles.css">
+</head>
+<body class="page-q">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  </defs>
+</svg>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav" id="nav">
+  <div class="nav__bar">
+    <a class="brand" href="../index.html" aria-label="WorkReceipt, back to the homepage"><img src="../assets/logo.svg" alt="" width="26" height="26"><span>WorkReceipt</span></a>
+    <nav aria-label="Primary">
+      <ul class="nav__links">
+        <li><a href="../index.html#features">Features</a></li>
+        <li><a href="../index.html#how">How it works</a></li>
+        <li><a href="../index.html#privacy">Privacy</a></li>
+        <li><a href="../index.html#pricing">Pricing</a></li>
+        <li><a href="index.html" aria-current="page">Questions</a></li>
+      </ul>
+    </nav>
+    <a class="btn btn--solid" href="../index.html#download">Download for Mac</a>
+    <button class="nav__toggle" id="navToggle" aria-label="Open menu" aria-expanded="false" aria-controls="navMenu"><svg><use href="#i-menu"/></svg></button>
+  </div>
+  <div class="nav__menu" id="navMenu">
+    <a href="../index.html#features">Features</a><a href="../index.html#how">How it works</a><a href="../index.html#privacy">Privacy</a><a href="../index.html#pricing">Pricing</a><a href="index.html" aria-current="page">Questions</a>
+    <a class="btn btn--solid" href="../index.html#download">Download for Mac</a>
+  </div>
+</header>
+
+<main id="main">
+  <section class="qhero">
+    <div class="wrap">
+      <a class="back" href="../index.html">&larr; Back to the homepage</a>
+      <h1>Questions</h1>
+      <p class="lead">Plain answers about what WorkReceipt does, what it needs, and how it treats your data. Where something is still undecided, we say so.</p>
+    </div>
+  </section>
+
+  <section class="qbody">
+    <div class="wrap qgrid">
+      <nav class="qnav" aria-label="Question categories">
+        <ul>
+          <li><a href="#getting-started">Getting Started</a></li>
+          <li><a href="#compatibility">Compatibility</a></li>
+          <li><a href="#privacy">Privacy</a></li>
+          <li><a href="#reports">Reports</a></li>
+          <li><a href="#pricing-updates">Pricing and Updates</a></li>
+        </ul>
+      </nav>
+
+      <div class="qcols">
+
+        <section class="qcat" id="getting-started" aria-labelledby="h-gs">
+          <h2 id="h-gs">Getting Started</h2>
+          <div class="qlist">
+            <details open><summary>What is WorkReceipt?</summary><div class="qa"><p>WorkReceipt is a Mac app that reads your Claude Code session history and the Git history of a project you choose, then writes a client-readable work report. The report keeps three things apart: work requested (from your prompts), changes delivered (from Git commits) and checks that were recorded. You edit the wording, review privacy findings, and export HTML or PDF.</p></div></details>
+            <details><summary>Who is it designed for?</summary><div class="qa"><p>Freelance developers and small software agencies who build with Claude Code and need to show clients what was asked for and what was delivered, without handing over raw session logs.</p></div></details>
+            <details><summary>What do I need to get started?</summary><div class="qa"><p>A Mac, Claude Code session history on that Mac, and a project that is a Git repository with commits in the period you want to report on. WorkReceipt is in private beta, so there is no public download yet.</p></div></details>
+          </div>
+        </section>
+
+        <section class="qcat" id="compatibility" aria-labelledby="h-co">
+          <h2 id="h-co">Compatibility</h2>
+          <div class="qlist">
+            <details><summary>Which Macs are supported?</summary><div class="qa"><p>The current private-beta build is made for Apple silicon Macs. The minimum macOS version and whether Intel Macs will be supported have not been decided, and will be confirmed before any public release. Windows and Linux are not targets.</p></div></details>
+            <details><summary>Do I need Claude Code?</summary><div class="qa"><p>Yes. The work requests in a report come from the Claude Code session logs that Claude Code stores on your Mac. Claude Code does not need to be running while you use WorkReceipt.</p></div></details>
+            <details><summary>Is Git required?</summary><div class="qa"><p>Yes. Git history is the evidence for delivered changes, so the project should be a Git repository with commits in the reporting period. Only the current branch is read.</p></div></details>
+          </div>
+        </section>
+
+        <section class="qcat" id="privacy" aria-labelledby="h-pr">
+          <h2 id="h-pr">Privacy</h2>
+          <div class="qlist">
+            <details><summary>Does WorkReceipt upload my data?</summary><div class="qa"><p>No upload is required. Your sessions and repositories are read and processed on your Mac, there is no account, and nothing is sent to a WorkReceipt server to generate a report. Reports are saved to a folder on your Mac.</p></div></details>
+            <details><summary>What information appears in a report?</summary><div class="qa"><p>Prompt titles (the first line of each prompt), the commands of recorded checks, commit subjects and folder names. File contents and tool output are never included.</p></div></details>
+            <details><summary>How does redaction work?</summary><div class="qa"><p>WorkReceipt masks common secret and personal-data patterns, such as keys, tokens, email addresses and file paths, and lists each masked value in the Privacy Center by severity. Every high-severity finding needs your review before export unlocks, and you can add your own terms, such as a client name, to mask everywhere. Redaction is best-effort: it does not catch everything, so read your report before you send it.</p></div></details>
+          </div>
+        </section>
+
+        <section class="qcat" id="reports" aria-labelledby="h-re">
+          <h2 id="h-re">Reports</h2>
+          <div class="qlist">
+            <details><summary>What can I edit?</summary><div class="qa"><p>The wording of each work request in Report Studio, so technical prompts can become plain language. Edits are re-checked for secrets before they reach the report.</p></div></details>
+            <details><summary>How accurate are the reports?</summary><div class="qa"><p>The report keeps requests, Git-backed changes and recorded checks separate. It never says a request was completed, since a request is not proof of completion, and recorded checks are not re-run. Check detection covers common test and build runners rather than every custom script, so review each report before you send it.</p></div></details>
+            <details><summary>Can I export HTML and PDF?</summary><div class="qa"><p>Yes. WorkReceipt exports a standalone HTML report and a PDF.</p></div></details>
+          </div>
+        </section>
+
+        <section class="qcat" id="pricing-updates" aria-labelledby="h-pu">
+          <h2 id="h-pu">Pricing and Updates</h2>
+          <div class="qlist">
+            <details><summary>Is WorkReceipt free or paid?</summary><div class="qa"><p>Not decided yet. We plan an affordable license for freelance developers and small agencies. The price and terms will be published before any public release, and nothing can be bought today.</p></div></details>
+            <details><summary>How are updates delivered?</summary><div class="qa"><p>The current private-beta build is updated by installing a newer version over the old one. How updates will be delivered for a public release has not been decided.</p></div></details>
+          </div>
+        </section>
+
+        <aside class="qend">
+          <div>
+            <h2>See it in action</h2>
+            <p>Browse the five screens of the app, or check where the release stands.</p>
+          </div>
+          <div class="qend__cta">
+            <a class="btn btn--solid" href="../index.html#explore">Explore WorkReceipt</a>
+            <a class="btn btn--line" href="../index.html#download">Release status</a>
+          </div>
+        </aside>
+
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot__grid">
+      <div><a class="brand" href="../index.html"><img src="../assets/logo.svg" alt="" width="26" height="26"><span>WorkReceipt</span></a><p>Client-ready reports from your Claude Code sessions and Git history. Mac-first and local-first.</p></div>
+      <div><h3>Product</h3><ul><li><a href="../index.html#features">Features</a></li><li><a href="../index.html#how">How it works</a></li><li><a href="../index.html#example">Example report</a></li><li><a href="../index.html#pricing">Pricing</a></li></ul></div>
+      <div><h3>Trust</h3><ul><li><a href="../index.html#privacy">Privacy</a></li><li><a href="index.html">Questions</a></li><li><a href="../index.html#download">Release status</a></li></ul></div>
+      <div><h3>Privacy</h3><p style="margin-top:0">Processed on your Mac. No account and no required cloud upload. Redaction is best-effort, so review every report before sending.</p></div>
+    </div>
+    <div class="foot__base"><span>© 2026 WorkReceipt. Design prototype, not a public release.</span><span>Version 0.5.1, private beta. All example data is synthetic.</span></div>
+  </div>
+</footer>
+<script src="../script.js"></script>
+</body>
+</html>

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>WorkReceipt: a client-ready receipt for your AI-assisted work</title>
-<meta name="description" content="WorkReceipt turns Claude Code sessions and Git history into a clear, privacy-reviewed work report on your Mac. No account, no upload.">
+<meta name="description" content="WorkReceipt is a Mac app that turns Claude Code sessions and Git history into a clear, privacy-reviewed work report. No account, no upload.">
 <meta name="theme-color" content="#f5f2ea">
 <meta name="robots" content="noindex">
 <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
@@ -15,6 +15,7 @@
   <defs>
     <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
   </defs>
 </svg>
 <a class="skip" href="#main">Skip to content</a>
@@ -28,14 +29,15 @@
         <li><a href="#how">How it works</a></li>
         <li><a href="#privacy">Privacy</a></li>
         <li><a href="#pricing">Pricing</a></li>
+        <li><a href="questions/index.html">Questions</a></li>
       </ul>
     </nav>
-    <a class="btn btn--solid" href="#download">Download</a>
+    <a class="btn btn--solid" href="#download">Download for Mac</a>
     <button class="nav__toggle" id="navToggle" aria-label="Open menu" aria-expanded="false" aria-controls="navMenu"><svg><use href="#i-menu"/></svg></button>
   </div>
   <div class="nav__menu" id="navMenu">
-    <a href="#features">Features</a><a href="#how">How it works</a><a href="#privacy">Privacy</a><a href="#pricing">Pricing</a>
-    <a class="btn btn--solid" href="#download">Download</a>
+    <a href="#features">Features</a><a href="#how">How it works</a><a href="#privacy">Privacy</a><a href="#pricing">Pricing</a><a href="questions/index.html">Questions</a>
+    <a class="btn btn--solid" href="#download">Download for Mac</a>
   </div>
 </header>
 
@@ -46,11 +48,12 @@
   <div class="wrap">
     <div class="hero__grid">
       <div>
+        <p class="eyebrow">A Mac app for freelance developers and small agencies</p>
         <h1>A receipt for your AI&#8209;assisted work.</h1>
-        <p class="lead">WorkReceipt reads your Claude Code sessions and Git history on your Mac and writes a clear, editable report your client can read. Nothing leaves your computer.</p>
+        <p class="lead">WorkReceipt reads your Claude Code sessions and Git history on your Mac and writes a clear, editable report your client can read. Requests come from your sessions, delivered changes come from Git, and nothing leaves your computer.</p>
         <div class="hero__cta">
           <a class="btn btn--solid" href="#download">Download for Mac</a>
-          <a class="btn btn--line" href="#how">See how it works</a>
+          <a class="btn btn--line" href="#explore">Explore the app</a>
         </div>
         <p class="hero__note">Runs on your Mac. No account needed. Exports HTML and PDF.</p>
       </div>
@@ -91,43 +94,7 @@
   </div>
 </section>
 
-<!-- Product showcase -->
-<section class="section" id="showcase" style="padding-top:var(--s7)">
-  <div class="wrap">
-    <div class="head">
-      <h2>The app, as it ships.</h2>
-      <p class="lead">Every screen here is a capture of WorkReceipt 0.5.1 running on a synthetic demo project.</p>
-    </div>
-    <div class="show">
-      <div class="show__tabs" role="tablist" aria-label="Product views" aria-orientation="vertical">
-        <button class="show__tab" role="tab" id="t-overview" aria-controls="p-overview" aria-selected="true"><b>Overview</b><span>Projects and weekly session activity</span></button>
-        <button class="show__tab" role="tab" id="t-projects" aria-controls="p-projects" aria-selected="false" tabindex="-1"><b>Projects</b><span>Pick a repository, period and client</span></button>
-        <button class="show__tab" role="tab" id="t-studio" aria-controls="p-studio" aria-selected="false" tabindex="-1"><b>Report Studio</b><span>Edit wording against Git evidence</span></button>
-        <button class="show__tab" role="tab" id="t-privacy" aria-controls="p-privacy" aria-selected="false" tabindex="-1"><b>Privacy Center</b><span>Review every masked value</span></button>
-        <button class="show__tab" role="tab" id="t-report" aria-controls="p-report" aria-selected="false" tabindex="-1"><b>Exported report</b><span>A standalone HTML file</span></button>
-      </div>
-      <div>
-        <div class="show__panel" role="tabpanel" id="p-overview" aria-labelledby="t-overview">
-          <div class="win"><div class="win__bar"><i></i><i></i><i></i><span class="win__title">Overview</span><span class="win__tag">Synthetic data</span></div><img loading="lazy" src="assets/product/overview.webp" width="2360" height="1520" alt="WorkReceipt Overview with project count, weekly session chart and recent reports"></div>
-        </div>
-        <div class="show__panel" role="tabpanel" id="p-projects" aria-labelledby="t-projects" hidden>
-          <div class="win"><div class="win__bar"><i></i><i></i><i></i><span class="win__title">Projects</span><span class="win__tag">Synthetic data</span></div><img loading="lazy" src="assets/product/projects.webp" width="2360" height="1520" alt="WorkReceipt Projects screen listing Claude Code projects with a period and client name"></div>
-        </div>
-        <div class="show__panel" role="tabpanel" id="p-studio" aria-labelledby="t-studio" hidden>
-          <div class="win"><div class="win__bar"><i></i><i></i><i></i><span class="win__title">Report Studio</span><span class="win__tag">Synthetic data</span></div><img loading="lazy" src="assets/product/studio.webp" width="2360" height="1520" alt="WorkReceipt Report Studio with editable work requests and Git evidence"></div>
-        </div>
-        <div class="show__panel" role="tabpanel" id="p-privacy" aria-labelledby="t-privacy" hidden>
-          <div class="win"><div class="win__bar"><i></i><i></i><i></i><span class="win__title">Privacy Center</span><span class="win__tag">Synthetic data</span></div><img loading="lazy" src="assets/product/privacy.webp" width="2360" height="1520" alt="WorkReceipt Privacy Center listing masked values by severity with an export approval counter"></div>
-        </div>
-        <div class="show__panel" role="tabpanel" id="p-report" aria-labelledby="t-report" hidden>
-          <div class="win win--report"><div class="win__bar"><i></i><i></i><i></i><span class="win__title">example_report.html</span><span class="win__tag">Synthetic example</span></div><img loading="lazy" src="assets/product/report.webp" width="2000" height="1520" alt="Exported WorkReceipt HTML report titled Work report for Acme Demo Co (synthetic)"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- Problem and solution -->
+<!-- Problem -->
 <section class="section section--tint" id="why">
   <div class="wrap">
     <div class="head">
@@ -157,44 +124,229 @@
   </div>
 </section>
 
-<!-- Features -->
-<section class="section" id="features">
+<!-- Explore WorkReceipt: interactive walkthrough -->
+<section class="section" id="explore">
   <div class="wrap">
-    <div class="head"><h2>Six line items, each one doing a job.</h2></div>
-    <ul class="ledger">
-      <li><h3>Claude Code activity analysis</h3><p>Reads your local session logs and pulls out the work you asked for, for the project you choose.</p><span class="mono">your ~/.claude logs</span></li>
-      <li><h3>Git commit evidence</h3><p>Commits in the period become the evidence of delivered changes, grouped by where they landed.</p><span class="mono">git history</span></li>
-      <li><h3>Editable reports</h3><p>Rewrite any description in plain language. Edits are re-checked for secrets.</p><span class="mono">edit before export</span></li>
-      <li><h3>Privacy review</h3><p>Masked values are listed by severity. Export stays blocked until each high-severity item has your decision.</p><span class="mono">you approve</span></li>
-      <li><h3>HTML and PDF export</h3><p>A standalone, print-ready report you can send as a file or as a PDF.</p><span class="mono">.html, .pdf</span></li>
-      <li><h3>Local-first processing</h3><p>Analysis happens on your Mac. No cloud service has to see your sessions or repository.</p><span class="mono">on this Mac</span></li>
-    </ul>
+    <div class="head">
+      <p class="eyebrow">Explore WorkReceipt</p>
+      <h2>Five screens, one report.</h2>
+      <p class="lead">Every screen is a capture of WorkReceipt 0.5.1 running on a synthetic demo project.</p>
+    </div>
+    <div class="show">
+      <div class="show__tabs" role="tablist" aria-label="WorkReceipt screens" aria-orientation="vertical">
+        <button class="show__tab" role="tab" id="t-overview" aria-controls="p-overview" aria-selected="true"><b>Overview</b><span>See your projects, development activity and recently generated reports at a glance.</span></button>
+        <button class="show__tab" role="tab" id="t-projects" aria-controls="p-projects" aria-selected="false" tabindex="-1"><b>Projects</b><span>Choose a local repository, select a reporting period and analyze its development history.</span></button>
+        <button class="show__tab" role="tab" id="t-studio" aria-controls="p-studio" aria-selected="false" tabindex="-1"><b>Report Studio</b><span>Review development evidence, refine report wording and prepare client-readable work summaries.</span></button>
+        <button class="show__tab" role="tab" id="t-privacy" aria-controls="p-privacy" aria-selected="false" tabindex="-1"><b>Privacy Center</b><span>Inspect redacted information, review potentially sensitive findings and control what is shared.</span></button>
+        <button class="show__tab" role="tab" id="t-report" aria-controls="p-report" aria-selected="false" tabindex="-1"><b>Exported Reports</b><span>Create professionally formatted HTML and PDF reports using verified development evidence.</span></button>
+      </div>
+      <div class="show__stage">
+        <div class="show__panel is-active" role="tabpanel" id="p-overview" aria-labelledby="t-overview">
+          <div class="win"><div class="win__bar"><i></i><i></i><i></i><span class="win__title">Overview</span><span class="win__tag">Synthetic data</span></div><div class="win__shot"><img src="assets/product/overview.webp" width="2360" height="1520" style="--ox:19%;--oy:0%" alt="WorkReceipt Overview with project count, weekly session chart and recent reports"></div></div>
+          <p class="show__cap"><span>See your projects, development activity and recently generated reports at a glance.</span><button type="button" class="show__zoom" data-full="assets/product/overview.webp" data-title="Overview">View full screen</button></p>
+        </div>
+        <div class="show__panel" role="tabpanel" id="p-projects" aria-labelledby="t-projects">
+          <div class="win"><div class="win__bar"><i></i><i></i><i></i><span class="win__title">Projects</span><span class="win__tag">Synthetic data</span></div><div class="win__shot"><img loading="lazy" src="assets/product/projects.webp" width="2360" height="1520" style="--ox:19%;--oy:0%" alt="WorkReceipt Projects screen listing Claude Code projects with a period and client name"></div></div>
+          <p class="show__cap"><span>Choose a local repository, select a reporting period and analyze its development history.</span><button type="button" class="show__zoom" data-full="assets/product/projects.webp" data-title="Projects">View full screen</button></p>
+        </div>
+        <div class="show__panel" role="tabpanel" id="p-studio" aria-labelledby="t-studio">
+          <div class="win"><div class="win__bar"><i></i><i></i><i></i><span class="win__title">Report Studio</span><span class="win__tag">Synthetic data</span></div><div class="win__shot"><img loading="lazy" src="assets/product/studio.webp" width="2360" height="1520" style="--ox:19%;--oy:0%" alt="WorkReceipt Report Studio with editable work requests and Git evidence"></div></div>
+          <p class="show__cap"><span>Review development evidence, refine report wording and prepare client-readable work summaries.</span><button type="button" class="show__zoom" data-full="assets/product/studio.webp" data-title="Report Studio">View full screen</button></p>
+        </div>
+        <div class="show__panel" role="tabpanel" id="p-privacy" aria-labelledby="t-privacy">
+          <div class="win"><div class="win__bar"><i></i><i></i><i></i><span class="win__title">Privacy Center</span><span class="win__tag">Synthetic data</span></div><div class="win__shot"><img loading="lazy" src="assets/product/privacy.webp" width="2360" height="1520" style="--ox:19%;--oy:0%" alt="WorkReceipt Privacy Center listing masked values by severity with an export approval counter"></div></div>
+          <p class="show__cap"><span>Inspect redacted information, review potentially sensitive findings and control what is shared.</span><button type="button" class="show__zoom" data-full="assets/product/privacy.webp" data-title="Privacy Center">View full screen</button></p>
+        </div>
+        <div class="show__panel" role="tabpanel" id="p-report" aria-labelledby="t-report">
+          <div class="win"><div class="win__bar"><i></i><i></i><i></i><span class="win__title">example_report.html</span><span class="win__tag">Synthetic example</span></div><div class="win__shot"><img loading="lazy" src="assets/product/report.webp" width="2000" height="1520" style="--ox:0%;--oy:0%" alt="Exported WorkReceipt HTML report titled Work report for Acme Demo Co (synthetic)"></div></div>
+          <p class="show__cap"><span>Create professionally formatted HTML and PDF reports using verified development evidence.</span><button type="button" class="show__zoom" data-full="assets/product/report.webp" data-title="Exported report">View full screen</button></p>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
 <!-- How it works -->
 <section class="section section--tint" id="how">
   <div class="wrap">
-    <div class="head"><h2>Three steps from sessions to report.</h2></div>
-    <div class="how">
-      <ol class="how__steps">
-        <li><button type="button" data-shot="s1" aria-pressed="true"><span class="how__n">1</span><span><h3>Choose a project</h3><p>Select a repository WorkReceipt found from your Claude Code history. Set the period and name the client.</p></span></button></li>
-        <li><button type="button" data-shot="s2" aria-pressed="false"><span class="how__n">2</span><span><h3>Review evidence and privacy</h3><p>Check requests against commits and recorded checks. Decide on every masked value that needs you.</p></span></button></li>
-        <li><button type="button" data-shot="s3" aria-pressed="false"><span class="how__n">3</span><span><h3>Export a client-ready report</h3><p>Edit the wording, then export HTML or PDF to send to your client.</p></span></button></li>
-      </ol>
-      <div>
-        <div class="how__shot" id="s1"><div class="win"><div class="win__bar"><i></i><i></i><i></i><span class="win__title">Projects</span><span class="win__tag">Synthetic data</span></div><img loading="lazy" src="assets/product/projects.webp" width="2360" height="1520" alt="Projects screen where a repository, period and client are chosen"></div></div>
-        <div class="how__shot" id="s2" hidden><div class="win"><div class="win__bar"><i></i><i></i><i></i><span class="win__title">Privacy Center</span><span class="win__tag">Synthetic data</span></div><img loading="lazy" src="assets/product/privacy.webp" width="2360" height="1520" alt="Privacy Center where masked values are reviewed"></div></div>
-        <div class="how__shot" id="s3" hidden><div class="win win--report"><div class="win__bar"><i></i><i></i><i></i><span class="win__title">example_report.html</span><span class="win__tag">Synthetic example</span></div><img loading="lazy" src="assets/product/report.webp" width="2000" height="1520" alt="The exported HTML report"></div></div>
-      </div>
+    <div class="head">
+      <p class="eyebrow">How it works</p>
+      <h2>Three steps from sessions to report.</h2>
+    </div>
+    <ol class="steps">
+      <li class="step">
+        <div class="step__thumb"><img loading="lazy" src="assets/product/projects.webp" width="2360" height="1520" alt="Projects screen where a repository, period and client are chosen"></div>
+        <span class="step__n">1</span>
+        <h3>Choose a project</h3>
+        <p>Select a repository WorkReceipt found from your Claude Code history. Set the period and name the client.</p>
+      </li>
+      <li class="step">
+        <div class="step__thumb"><img loading="lazy" src="assets/product/privacy.webp" width="2360" height="1520" alt="Privacy Center where masked values are reviewed"></div>
+        <span class="step__n">2</span>
+        <h3>Review evidence and privacy</h3>
+        <p>Check requests against commits and recorded checks. Decide on every masked value that needs you.</p>
+      </li>
+      <li class="step">
+        <div class="step__thumb step__thumb--report"><img loading="lazy" src="assets/product/report.webp" width="2000" height="1520" alt="The exported HTML report"></div>
+        <span class="step__n">3</span>
+        <h3>Export a client-ready report</h3>
+        <p>Edit the wording, then export HTML or PDF to send to your client.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- Features: six illustrated cards -->
+<section class="section" id="features">
+  <div class="wrap">
+    <div class="head">
+      <p class="eyebrow">Features</p>
+      <h2>Six parts, built around the evidence.</h2>
+      <p class="lead">Each part of WorkReceipt exists to make one thing easier to show, check or send.</p>
+    </div>
+    <div class="fgrid">
+
+      <article class="fc">
+        <div class="fc__vis" role="img" aria-label="Three Claude Code sessions feeding a list of work requests, with dates">
+          <div class="ses">
+            <div class="ses__col">
+              <div class="ses__card"><span>session, Oct 26</span><i style="--w:84%"></i><i style="--w:58%"></i></div>
+              <div class="ses__card"><span>session, Nov 02</span><i style="--w:72%"></i><i style="--w:90%"></i></div>
+              <div class="ses__card"><span>session, Nov 09</span><i style="--w:64%"></i><i style="--w:78%"></i></div>
+            </div>
+            <svg class="ses__flow" viewBox="0 0 60 220" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M0 40 C30 40 30 110 60 110" /><path d="M0 110 H60" /><path d="M0 180 C30 180 30 110 60 110" />
+            </svg>
+            <div class="ses__out">
+              <div class="ses__head">Work requested <em>editable</em></div>
+              <ol>
+                <li><b>1</b><span>Add a pricing page with three plans</span><time>Oct 26</time></li>
+                <li><b>2</b><span>Fix checkout totals and add regression tests</span><time>Nov 02</time></li>
+                <li><b>3</b><span>Add CSV export for orders</span><time>Nov 09</time></li>
+              </ol>
+            </div>
+          </div>
+        </div>
+        <div class="fc__txt"><h3>Claude Code Activity</h3><p>Turn local Claude Code session history into a clear record of requested development work.</p></div>
+      </article>
+
+      <article class="fc">
+        <div class="fc__vis" role="img" aria-label="Git commit list with short hashes and dates, and a summary of five files changed">
+          <div class="git">
+            <ul class="git__list">
+              <li><code>e136c46</code><span>Document export endpoint</span><time>11-13</time></li>
+              <li><code>3c8ab86</code><span>Add CSV export for orders</span><time>11-10</time></li>
+              <li><code>5f8bd0a</code><span>Add checkout regression tests</span><time>11-03</time></li>
+              <li><code>a4cdcf1</code><span>Fix checkout total rounding</span><time>11-03</time></li>
+              <li><code>3688e44</code><span>Add pricing page with three plans</span><time>10-27</time></li>
+            </ul>
+            <div class="git__sum">
+              <div><small>Files changed</small><b>5</b></div>
+              <div><small>Lines</small><b><u>+130</u> / <s>&minus;0</s></b></div>
+              <div class="git__land"><small>Where changes landed</small><span>src <b>3</b></span><span>docs <b>1</b></span><span>tests <b>1</b></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="fc__txt"><h3>Git Evidence</h3><p>Connect reported work to actual repository changes.</p></div>
+      </article>
+
+      <article class="fc">
+        <div class="fc__vis" role="img" aria-label="A work request being edited from technical wording into plain language, with a note that edits are re-checked for secrets">
+          <div class="edit">
+            <div class="edit__head"><b>Work requested</b><em>editable</em></div>
+            <div class="edit__was"><small>From your session</small>Checkout totals are off by a cent for some carts. Fix and add regression tests.</div>
+            <div class="edit__arrow" aria-hidden="true">&darr;</div>
+            <div class="edit__field"><small>Your wording</small>Fixed a rounding error that made some cart totals one cent off, and added tests so it stays fixed.<span class="edit__caret"></span></div>
+            <p class="edit__note"><svg aria-hidden="true"><use href="#i-check"/></svg>Edits are re-checked for secrets before they reach the report.</p>
+          </div>
+        </div>
+        <div class="fc__txt"><h3>Editable Reports</h3><p>Refine technical descriptions into language your clients can understand.</p></div>
+      </article>
+
+      <article class="fc">
+        <div class="fc__vis" role="img" aria-label="A high-severity finding with the secret replaced by a redaction marker, and an export approval counter at zero of one reviewed">
+          <div class="prv">
+            <div class="prv__stat"><div><small>Export approval</small><b>0/1</b></div><div class="prv__bar"><i></i></div><span>reviewed</span></div>
+            <div class="prv__row">
+              <div class="prv__top"><span class="pill pill--high"><i></i>high</span><b>AWS access key</b><small>Request 4</small><a class="prv__link" aria-hidden="true">Show 1 detection</a></div>
+              <code>Use AWS key <mark>[REDACTED:aws-key]</mark> for the S3 upload (synthetic example key)</code>
+            </div>
+            <div class="prv__row prv__row--ok">
+              <div class="prv__top"><span class="pill pill--med"><i></i>medium</span><b>email</b><small>Request 2</small></div>
+              <p>Masked automatically; no review needed.</p>
+            </div>
+          </div>
+        </div>
+        <div class="fc__txt"><h3>Privacy Review</h3><p>Inspect sensitive information before sharing a report.</p></div>
+      </article>
+
+      <article class="fc">
+        <div class="fc__vis fc__vis--pages" role="img" aria-label="Two report pages side by side, one labeled HTML and one labeled PDF">
+          <div class="pages">
+            <div class="pg pg--html">
+              <div class="pg__tag">HTML</div>
+              <div class="pg__chrome"><i></i><i></i><i></i></div>
+              <img loading="lazy" src="assets/product/report.webp" width="2000" height="1520" alt="">
+            </div>
+            <div class="pg pg--pdf">
+              <div class="pg__tag">PDF</div>
+              <div class="pdf">
+                <small>WorkReceipt</small>
+                <b>Work report</b>
+                <span>Acme Demo Co (synthetic)</span>
+                <div class="pdf__stats"><i><u>6</u>requests</i><i><u>5</u>commits</i><i><u>5</u>files</i></div>
+                <div class="pdf__line"></div><div class="pdf__line"></div><div class="pdf__line short"></div>
+                <div class="pdf__h">Changes delivered</div>
+                <div class="pdf__line"></div><div class="pdf__line"></div><div class="pdf__line short"></div>
+                <div class="pdf__h">Verification</div>
+                <div class="pdf__line"></div><div class="pdf__line short"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="fc__txt"><h3>HTML &amp; PDF Export</h3><p>Deliver polished, portable work reports in the format your client needs.</p></div>
+      </article>
+
+      <article class="fc">
+        <div class="fc__vis" role="img" aria-label="A Mac processing session logs and a Git repository locally, with a crossed-out cloud showing nothing is uploaded">
+          <svg class="mac" viewBox="0 0 480 270" aria-hidden="true">
+            <g class="mac__in">
+              <rect x="14" y="62" width="104" height="34" rx="9"/><text x="66" y="83" text-anchor="middle">~/.claude logs</text>
+              <rect x="14" y="132" width="104" height="34" rx="9"/><text x="66" y="153" text-anchor="middle">git history</text>
+            </g>
+            <path class="mac__flow" d="M118 79 C140 79 140 112 158 112 M118 149 C140 149 140 126 158 126"/>
+            <g class="mac__dev">
+              <rect x="158" y="34" width="190" height="124" rx="10"/>
+              <rect x="167" y="43" width="172" height="106" rx="5" class="mac__screen"/>
+              <circle cx="177" cy="53" r="2.4"/><circle cx="185" cy="53" r="2.4"/><circle cx="193" cy="53" r="2.4"/>
+              <rect x="177" y="66" width="82" height="7" rx="3.5" class="mac__ln"/>
+              <rect x="177" y="80" width="130" height="5" rx="2.5" class="mac__ln"/>
+              <rect x="177" y="91" width="112" height="5" rx="2.5" class="mac__ln"/>
+              <rect x="177" y="102" width="122" height="5" rx="2.5" class="mac__ln"/>
+              <rect x="177" y="121" width="152" height="8" rx="4" class="mac__trk"/><rect x="177" y="121" width="106" height="8" rx="4" class="mac__bar"/>
+              <text x="177" y="140" class="mac__lbl">Analyzing on this Mac</text>
+              <path d="M142 158 H364 L356 168 H150 Z" class="mac__base"/>
+            </g>
+            <path class="mac__cut" d="M348 96 H400"/>
+            <g class="mac__cloud">
+              <path d="M412 106 a16 16 0 0 1 4-31 a20 20 0 0 1 38 4 a14 14 0 0 1 -2 27 Z"/>
+              <path class="mac__x" d="M422 80 L448 104 M448 80 L422 104"/>
+            </g>
+            <text x="432" y="130" text-anchor="middle" class="mac__lbl">No upload</text>
+          </svg>
+        </div>
+        <div class="fc__txt"><h3>Built for Your Mac</h3><p>Analyze your projects locally without uploading session logs to a cloud service.</p></div>
+      </article>
+
     </div>
   </div>
 </section>
 
 <!-- Privacy and trust -->
 <section class="section dark" id="privacy">
-  <div class="wrap priv">
+  <div class="wrap priv-wrap">
     <div>
+      <p class="eyebrow">Privacy and trust</p>
       <h2>Your sessions stay on your Mac.</h2>
       <dl>
         <dt>Local processing</dt><dd>Logs and repositories are read from disk on your computer and processed there.</dd>
@@ -221,12 +373,13 @@
 <section class="section" id="example">
   <div class="wrap rep">
     <div>
+      <p class="eyebrow">Example report</p>
       <h2 style="max-width:20ch">Requested, delivered and checked, kept apart.</h2>
       <p class="lead" style="margin-top:var(--s4)">The report says plainly that a request is not proof of completion, and shows what Git and your recorded checks support.</p>
       <dl>
         <div><dt>Work requested</dt><dd>Comes from the prompts you typed in Claude Code.</dd></div>
         <div><dt>Changes delivered</dt><dd>Comes from Git commits in the period.</dd></div>
-        <div><dt>Verification</dt><dd>Lists recorded checks and their recorded outcome. They are not re-run and never labeled “passed”.</dd></div>
+        <div><dt>Verification</dt><dd>Lists recorded checks and their recorded outcome. They are not re-run and never labeled &ldquo;passed&rdquo;.</dd></div>
       </dl>
     </div>
     <div>
@@ -239,6 +392,7 @@
 <section class="section section--tint" id="pricing">
   <div class="wrap price">
     <div>
+      <p class="eyebrow">Pricing</p>
       <h2>Pricing isn't set yet.</h2>
       <p class="lead" style="margin-top:var(--s4)">We plan an affordable license for freelance developers and small agencies. The amount and terms will be published before any public release.</p>
       <p class="notice"><strong>Not final.</strong> This section is a design prototype. Nothing on this page can be bought.</p>
@@ -260,30 +414,16 @@
   </div>
 </section>
 
-<!-- FAQ -->
-<section class="section" id="faq">
-  <div class="wrap faq">
-    <h2>Questions, answered plainly.</h2>
-    <div class="faq__list">
-      <details open><summary>Which Macs and macOS versions are supported?</summary><p>WorkReceipt is built and tested on macOS first. The minimum macOS version and Apple silicon or Intel support will be confirmed at release. Windows and Linux are not targets.</p></details>
-      <details><summary>What do I need from Claude Code?</summary><p>Claude Code session logs on your Mac, which Claude Code stores locally. WorkReceipt reads the logs for the project you pick. Claude Code does not need to be running.</p></details>
-      <details><summary>Do I need Git?</summary><p>Yes. Git history is the evidence of delivered changes, so the project should be a Git repository with commits in the reporting period.</p></details>
-      <details><summary>How is my data handled?</summary><p>Sessions and repositories are read and processed locally, with no required account and no cloud upload. A report uses only prompt titles, check commands, commit subjects and folder names. File contents and tool output are not included.</p></details>
-      <details><summary>How accurate are the reports?</summary><p>The report keeps requests, Git-backed changes and recorded checks separate. It never says a request was completed, and recorded checks are not re-run. Redaction is best-effort, so read every report before you send it.</p></details>
-      <details><summary>Which export formats are available?</summary><p>A standalone HTML report and PDF export. You can edit descriptions before you export.</p></details>
-    </div>
-  </div>
-</section>
-
 <!-- Download -->
-<section class="section section--tint" id="download">
+<section class="section" id="download">
   <div class="wrap dl">
     <div>
+      <p class="eyebrow">Download</p>
       <h2>WorkReceipt for Mac isn't public yet.</h2>
       <p class="lead" style="margin-top:var(--s4)">The app is in private beta, so there is nothing to install from this page. This is where the download will live.</p>
       <div class="hero__cta">
         <span class="btn" aria-disabled="true" role="note">Download for Mac, not public yet</span>
-        <a class="btn btn--line" href="#how">See how it works</a>
+        <a class="btn btn--line" href="questions/index.html">Read the questions</a>
       </div>
     </div>
     <dl class="status">
@@ -301,12 +441,18 @@
     <div class="foot__grid">
       <div><a class="brand" href="#top"><img src="assets/logo.svg" alt="" width="26" height="26"><span>WorkReceipt</span></a><p>Client-ready reports from your Claude Code sessions and Git history. Mac-first and local-first.</p></div>
       <div><h3>Product</h3><ul><li><a href="#features">Features</a></li><li><a href="#how">How it works</a></li><li><a href="#example">Example report</a></li><li><a href="#pricing">Pricing</a></li></ul></div>
-      <div><h3>Trust</h3><ul><li><a href="#privacy">Privacy</a></li><li><a href="#faq">FAQ</a></li><li><a href="#download">Release status</a></li></ul></div>
+      <div><h3>Trust</h3><ul><li><a href="#privacy">Privacy</a></li><li><a href="questions/index.html">Questions</a></li><li><a href="#download">Release status</a></li></ul></div>
       <div><h3>Privacy</h3><p style="margin-top:0">Processed on your Mac. No account and no required cloud upload. Redaction is best-effort, so review every report before sending.</p></div>
     </div>
     <div class="foot__base"><span>© 2026 WorkReceipt. Design prototype, not a public release.</span><span>Version 0.5.1, private beta. All example data is synthetic.</span></div>
   </div>
 </footer>
+
+<dialog class="viewer" id="viewer" aria-labelledby="viewerTitle">
+  <div class="viewer__bar"><b id="viewerTitle">Screenshot</b><button type="button" class="btn btn--line" id="viewerClose">Close</button></div>
+  <div class="viewer__scroll" tabindex="0"><img id="viewerImg" alt="" width="1500"></div>
+</dialog>
+
 <script src="script.js"></script>
 </body>
 </html>
