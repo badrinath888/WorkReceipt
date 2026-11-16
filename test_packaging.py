@@ -145,18 +145,18 @@ class FinderReveal(unittest.TestCase):
 
     def test_api_success_runs_open_with_resolved_path_only(self):
         with mock.patch.object(dm, "run_opener") as run:
-            api = dm.Api()
-            self.assertEqual(api.open_report(self.name), {"ok": True}); run.assert_called_with([self.r["html_path"]])
+            api = dm.Native()
+            self.assertEqual(api.open(self.name), {"ok": True}); run.assert_called_with([self.r["html_path"]])
             self.assertEqual(api.reveal(self.name), {"ok": True}); run.assert_called_with(["-R", self.r["html_path"]])
             run.reset_mock()
             for bad in ("/etc/hosts", "../x.html", "nope.html"):
-                res = api.open_report(bad); self.assertFalse(res["ok"]); self.assertTrue(res["error"]); self.assertFalse(api.reveal(bad)["ok"])
+                res = api.open(bad); self.assertFalse(res["ok"]); self.assertTrue(res["error"]); self.assertFalse(api.reveal(bad)["ok"])
             run.assert_not_called()
 
     def test_api_reports_missing_and_opener_failures(self):
-        api = dm.Api()
+        api = dm.Native()
         os.remove(self.r["html_path"])
-        res = api.open_report(self.name); self.assertFalse(res["ok"]); self.assertIn("no longer exists", res["error"])
+        res = api.open(self.name); self.assertFalse(res["ok"]); self.assertIn("no longer exists", res["error"])
 
     def test_run_opener_error_messages(self):
         with mock.patch.object(dm.sys, "platform", "darwin"):
@@ -164,9 +164,9 @@ class FinderReveal(unittest.TestCase):
             with mock.patch.object(dm.subprocess, "run", side_effect=OSError("boom")), self.assertRaisesRegex(dm.OpenError, "failed to run"): dm.run_opener(["/x"])
             with mock.patch.object(dm.subprocess, "run", return_value=mock.Mock(returncode=0)) as run:
                 dm.run_opener(["-R", "/x"]); self.assertEqual(run.call_args[0][0], ["/usr/bin/open", "-R", "/x"])
-        api = dm.Api()
+        api = dm.Native()
         with mock.patch.object(dm, "run_opener", side_effect=dm.OpenError("macOS could not open the file")):
-            self.assertEqual(api.open_report(self.name), {"ok": False, "error": "macOS could not open the file"})
+            self.assertEqual(api.open(self.name), {"ok": False, "error": "macOS could not open the file"})
 
 
 class PdfBackendFailures(unittest.TestCase):

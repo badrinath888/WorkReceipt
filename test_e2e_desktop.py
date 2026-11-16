@@ -1,5 +1,5 @@
 """End-to-end UI test on SYNTHETIC data. Needs playwright + Chrome; skipped otherwise.
-A stub of window.pywebview.api stands in for the macOS webview bridge (the real WKWebView is NOT exercised here)."""
+A FakeNative host on workreceipt_app.NATIVE stands in for the macOS window (the real WKWebView/Cocoa dialogs are NOT exercised here)."""
 import json, os, shutil, subprocess, sys, tempfile, threading, unittest
 from http.server import ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -11,7 +11,28 @@ except ImportError:
 
 
 @unittest.skipUnless(sync_playwright and CHROME, "playwright/Chrome not available")
+class FakeNative:
+    """Same interface as desktop.main.Native. Behaviour is scripted per test; every call is recorded."""
+    def __init__(self, ready=True, picks=(), pick_error=None, res=None):
+        self.ready, self.picks, self.pick_error, self.res, self.calls = ready, list(picks), pick_error, res, []
+    def status(self):
+        return {"available": self.ready, "window": True, "shown": self.ready, "pywebview": "fake", "platform": "test"}
+    def pick_folder(self, start=None):
+        self.calls.append(("pick", start))
+        if self.pick_error: return {"ok": False, "error": self.pick_error}
+        p = self.picks.pop(0) if self.picks else None
+        return {"ok": True, "path": p, "cancelled": p is None}
+    def open(self, name, kind="html"):
+        self.calls.append(("open", name, kind)); return self.res or {"ok": True}
+    def reveal(self, name, kind="html"):
+        self.calls.append(("reveal", name, kind)); return self.res or {"ok": True}
+
+
 class E2E(unittest.TestCase):
+    def native(self, **kw):
+        import workreceipt_app as app
+        app.NATIVE = FakeNative(**kw); self.addCleanup(setattr, app, "NATIVE", None); return app.NATIVE
+
     @classmethod
     def setUpClass(cls):
         cls.root = tempfile.mkdtemp()
@@ -92,8 +113,8 @@ class E2E(unittest.TestCase):
     def test_3_native_bridge_stub_remove_project_dark_resize(self):
         extra = os.path.join(self.root, "extra-proj"); os.makedirs(extra)
         self.core.save_settings({"onboarded": True})
-        pg = self.page(); pg.add_init_script("window.pywebview={api:{pick_folder:async()=>%r,reveal:async()=>true,open_report:async()=>true}}" % extra)
-        pg.goto(self.url + "#projects"); pg.wait_for_selector("#addproj")
+        self.native(picks=[extra]); pg = self.page()
+        pg.goto(self.url + "?shell=desktop#projects"); pg.wait_for_selector("#addproj:not([disabled])")
         pg.click("#addproj"); pg.wait_for_selector("tr[data-pick]:has-text('extra-proj')")
         self.assertIn("not a Git repository", pg.inner_text("#screen"))
         pg.click("[data-rmproj='%s']" % extra); pg.click("#confirmdel"); pg.wait_for_selector("tr:has-text('extra-proj')", state="detached")
@@ -109,7 +130,7 @@ class E2E(unittest.TestCase):
         pg.close()
 
     # ---- native folder picker bridge (pywebview stub; the real WKWebView is NOT exercised here) ----
-    def desk(self, stub_js, timeout=15000):
+    def desk(self, timeout=15000):
         # The suite pins the Claude folder with an env var so real logs are never read; that override would mask what the
         # Settings page saves. Pin it in settings.json instead (an empty temp dir) and drop the env override for this test.
         pin = os.environ.get("WORKRECEIPT_CLAUDE_DIR")
@@ -117,7 +138,7 @@ class E2E(unittest.TestCase):
             self.core.save_settings({"claude_dir": pin}); os.environ.pop("WORKRECEIPT_CLAUDE_DIR")
             self.addCleanup(os.environ.__setitem__, "WORKRECEIPT_CLAUDE_DIR", pin)
         self.core.save_settings({"onboarded": True})
-        pg = self.page(); pg.add_init_script(f"window.WR_BRIDGE_TIMEOUT_MS={timeout};" + stub_js)
+        pg = self.page(); pg.add_init_script(f"window.WR_BRIDGE_TIMEOUT_MS={timeout};")
         pg.goto(self.url + "?shell=desktop#settings"); pg.wait_for_selector("[data-choose=s_claude]")
         return pg
 
@@ -125,16 +146,12 @@ class E2E(unittest.TestCase):
         with open(os.path.join(self.core._home(), "settings.json")) as f:
             return json.load(f)
 
-    INSTALL = "window.__install=()=>{window.pywebview={api:{pick_folder:%s,reveal:async()=>true,open_report:async()=>true,ping:async()=>true}};window.dispatchEvent(new Event('pywebviewready'));};"
-
-    def test_6_picker_waits_for_bridge_then_populates_and_persists(self):
+    def test_6_picker_waits_for_host_then_populates_and_persists(self):
         d1, d2 = os.path.join(self.root, "claude-picked"), os.path.join(self.root, "reports-picked"); os.makedirs(d1); os.makedirs(d2)
-        picks = [d1, d2]
-        pg = self.desk(self.INSTALL % ("async()=>window.__picks.shift()"))
-        pg.evaluate("p=>window.__picks=p", picks)
-        self.assertTrue(pg.is_disabled("[data-choose=s_claude]")); self.assertTrue(pg.is_disabled("[data-choose=s_out]"))   # not usable before the bridge exists
-        pg.evaluate("window.__install()")
-        pg.wait_for_function("!document.querySelector('[data-choose=s_claude]').disabled")
+        n = self.native(ready=False, picks=[d1, d2]); pg = self.desk()
+        self.assertTrue(pg.is_disabled("[data-choose=s_claude]")); self.assertTrue(pg.is_disabled("[data-choose=s_out]"))   # not usable before the host is ready
+        n.ready = True
+        pg.wait_for_selector("[data-choose=s_claude]:not([disabled])")
         pg.click("[data-choose=s_claude]"); pg.wait_for_function("p=>document.querySelector('#s_claude').value===p", arg=d1)
         pg.click("[data-choose=s_out]"); pg.wait_for_function("p=>document.querySelector('#s_out').value===p", arg=d2)
         self.assertEqual((self.saved()["claude_dir"], self.saved()["out_dir"]), (d1, d2))       # persisted, in the right fields
@@ -142,39 +159,39 @@ class E2E(unittest.TestCase):
         self.assertEqual(self.errs, []); pg.close()
 
     def test_7_cancel_changes_nothing_and_failure_shows_error(self):
-        before = dict(self.saved()) if os.path.exists(os.path.join(self.core._home(), "settings.json")) else {}
-        pg = self.desk(self.INSTALL % "async()=>null"); pg.evaluate("window.__install()")
-        pg.wait_for_function("!document.querySelector('[data-choose=s_claude]').disabled")
+        self.native(); pg = self.desk()
+        pg.wait_for_selector("[data-choose=s_claude]:not([disabled])")
         old = pg.input_value("#s_claude"); pg.click("[data-choose=s_claude]"); pg.wait_for_timeout(300)
         self.assertEqual(pg.input_value("#s_claude"), old); self.assertNotIn("could not be opened", pg.inner_text("#toast"))
         pg.close()
-        pg = self.desk(self.INSTALL % "async()=>{throw new Error('no window')}"); pg.evaluate("window.__install()")
-        pg.wait_for_function("!document.querySelector('[data-choose=s_claude]').disabled")
+        self.native(pick_error="The folder dialog could not be opened (RuntimeError)."); pg = self.desk()
+        pg.wait_for_selector("[data-choose=s_claude]:not([disabled])")
         pg.click("[data-choose=s_claude]"); pg.wait_for_selector("#toast.on:has-text('could not be opened')")
         self.assertEqual(pg.input_value("#s_claude"), old); pg.close()
 
-    def test_8_bridge_never_arrives_is_a_clear_error_not_a_dead_button(self):
-        pg = self.desk("", timeout=1200)
+    def test_8_host_never_ready_is_a_clear_error_with_diagnostics(self):
+        self.native(ready=False); pg = self.desk(timeout=1200)
         pg.wait_for_selector(".callout.err:has-text('Native folder dialog unavailable')", timeout=5000)
         self.assertTrue(pg.is_disabled("[data-choose=s_claude]")); self.assertIn("not available", pg.get_attribute("[data-choose=s_claude]", "title"))
+        self.assertIn("not responding", pg.inner_text("#diag"))
         pg.fill("#s_claude", self.root); pg.click("#savesettings"); pg.wait_for_selector("#toast.on:has-text('Settings saved')")   # typing a path still works
-        self.assertEqual(self.saved()["claude_dir"], self.root); pg.close()
+        self.assertEqual(self.saved()["claude_dir"], self.root)
+        import workreceipt_app as app; app.NATIVE.ready = True                       # recovers via "Check again"
+        pg.click("#diagretry"); pg.wait_for_selector("[data-choose=s_claude]:not([disabled])"); self.assertIn("ready", pg.inner_text("#diag")); pg.close()
 
-    def test_9_add_project_uses_native_picker_and_waits_for_bridge(self):
+    def test_9_add_project_uses_native_picker_and_waits_for_host(self):
         extra = os.path.join(self.root, "picked-proj"); os.makedirs(extra)
         self.core.save_settings({"onboarded": True})
-        pg = self.page(); pg.add_init_script(self.INSTALL % ("async()=>%r" % extra))
+        n = self.native(ready=False, picks=[extra]); pg = self.page()
         pg.goto(self.url + "?shell=desktop#projects"); pg.wait_for_selector("#addproj")
         self.assertTrue(pg.is_disabled("#addproj"))
-        pg.evaluate("window.__install()"); pg.wait_for_function("!document.querySelector('#addproj').disabled")
+        n.ready = True; pg.wait_for_selector("#addproj:not([disabled])")
         pg.click("#addproj"); pg.wait_for_selector("tr[data-pick]:has-text('picked-proj')"); self.assertEqual(self.errs, []); pg.close()
 
     # ---- macOS validation fixes: real clicks, no forced UI state ----
-    REC = "window.__calls=[];window.pywebview={api:{pick_folder:async()=>null,ping:async()=>true,open_report:async(n,k)=>{window.__calls.push(['open',n,k]);return window.__res||{ok:true}},reveal:async(n,k)=>{window.__calls.push(['reveal',n,k]);return window.__res||{ok:true}}}};"
-
-    def load_demo(self, pg, stub=""):
+    def load_demo(self, pg, q=""):
         self.core.enable_demo(); self.core.save_settings({"onboarded": True})
-        pg.goto(self.url + "#projects"); pg.wait_for_selector("tr[data-pick]")
+        pg.goto(self.url + q + "#projects"); pg.wait_for_selector("tr[data-pick]")
         pg.click("tr[data-pick]:has-text('acme-storefront')"); pg.click("#load"); pg.wait_for_selector(".callout.ok:has-text('Loaded')", timeout=60000)
 
     def review_all(self, pg):
@@ -209,14 +226,14 @@ class E2E(unittest.TestCase):
         pg.keyboard.press("Escape"); self.assertEqual(pg.locator(".dlgbox").count(), 0); self.assertEqual(self.errs, []); pg.close()
 
     def test_b_open_and_reveal_send_names_only_and_show_errors(self):
-        pg = self.page(); pg.add_init_script(self.REC); self.load_demo(pg); self.review_all(pg)
+        n = self.native(); pg = self.page(); self.load_demo(pg, "?shell=desktop"); self.review_all(pg)
         pg.click(".tab[data-go=studio]"); pg.click("#export"); pg.wait_for_selector(".callout.ok:has-text('Exported')", timeout=60000)
         pg.click(".callout.ok [data-open]"); pg.click(".callout.ok [data-showfile]")
-        calls = pg.evaluate("window.__calls"); self.assertEqual([c[0] for c in calls], ["open", "reveal"])
+        calls = n.calls; self.assertEqual([c[0] for c in calls], ["open", "reveal"])
         for c in calls: self.assertTrue(c[1].endswith(".html") and "/" not in c[1] and "\\" not in c[1], c); self.assertEqual(c[2], "html")
-        pg.evaluate("window.__res={ok:false,error:'That report file no longer exists. It may have been moved or deleted'}")   # simulate backend refusal
+        n.res = {"ok": False, "error": "That report file no longer exists. It may have been moved or deleted"}   # simulate backend refusal
         pg.click(".callout.ok [data-open]"); pg.wait_for_selector("#toast.on:has-text('no longer exists')")
-        pg.click(".tab[data-go=reports]"); pg.click("[data-open]"); pg.click("[data-showfile]"); self.assertEqual(len(pg.evaluate("window.__calls")), 5)
+        pg.click(".tab[data-go=reports]"); pg.click("[data-open]"); pg.click("[data-showfile]"); self.assertEqual(len(n.calls), 5)
         self.assertEqual(self.errs, []); pg.close()
 
     def test_c_theme_icon_pills_overview_refresh_preview_settings(self):

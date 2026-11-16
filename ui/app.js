@@ -23,53 +23,51 @@ async function api(path, body) {
   if (!r.ok && r.status !== 409) throw new Error(j.error || `Request failed (${r.status})`);
   return Object.assign(j, { _status: r.status });
 }
-/* ---- native bridge (pywebview) ----
-   pywebview creates window.pywebview.api AFTER the page loads and fires "pywebviewready". In the desktop app (?shell=desktop) the
-   picker buttons stay disabled until the bridge answers; if it never does, a clear error is shown instead of a dead button. */
+/* ---- native actions ----
+   Native dialogs/Finder/open run through the app's own local HTTP channel (/api/native/*), NOT the WebView JS bridge, so they work
+   whenever the page itself loads. In the desktop app (?shell=desktop) the picker buttons stay disabled only until the host reports ready. */
 const DESKTOP = new URLSearchParams(location.search).get("shell") === "desktop";
-const B = { state: DESKTOP ? "wait" : "none" };
-const native = () => { const a = window.pywebview && window.pywebview.api; return a && typeof a.pick_folder === "function" ? a : null; };
-const BRIDGE_DOWN = "The native folder dialog is not available. Quit and reopen WorkReceipt; if this continues, type the folder path instead.";
+const B = { state: DESKTOP ? "wait" : "none", info: null };
+const BRIDGE_DOWN = "The native folder dialog is not available. Quit and reopen WorkReceipt; if this continues, open Settings → Diagnostics, or type the folder path instead.";
 function syncPickers() {
   const off = DESKTOP && B.state !== "ready";
   document.querySelectorAll("[data-choose],#addproj,#obpick").forEach(b => { b.disabled = off; b.title = off ? (B.state === "failed" ? BRIDGE_DOWN : "Starting up…") : ""; });
 }
-function bridgeCheck() {
-  if (!native()) return false;
-  if (B.state !== "ready") { B.state = "ready"; cache.screen = null; render(); syncPickers(); }
-  return true;
+async function nativeCheck() {
+  try { B.info = await api("/api/native/status", {}); } catch (e) { B.info = { available: false, reason: e.message }; }
+  const was = B.state; B.state = B.info.available ? "ready" : (B.state === "failed" ? "failed" : "wait");
+  if (was !== B.state) { cache.screen = null; render(); } syncPickers();
+  return B.state === "ready";
 }
 if (DESKTOP) {
-  addEventListener("pywebviewready", bridgeCheck);
-  const t0 = Date.now(), iv = setInterval(() => {
-    if (bridgeCheck()) clearInterval(iv);
+  const t0 = Date.now(), iv = setInterval(async () => {
+    if (await nativeCheck()) clearInterval(iv);
     else if (Date.now() - t0 > (window.WR_BRIDGE_TIMEOUT_MS || 15000)) { clearInterval(iv); B.state = "failed"; cache.screen = null; render(); syncPickers(); toast(BRIDGE_DOWN); }
-  }, 100);
+  }, 300);
 }
 async function pickFolder(start) {                 // -> path | null.  pickFolder.failed is true when null means "error", not "cancelled"
   pickFolder.failed = false;
-  if (DESKTOP && B.state !== "ready") { pickFolder.failed = true; toast(B.state === "failed" ? BRIDGE_DOWN : "WorkReceipt is still starting. Try again in a moment."); return null; }
-  const n = native(); if (!n) return null;
-  try { return (await n.pick_folder(start || null)) || null; }
-  catch (e) { pickFolder.failed = true; toast("The folder dialog could not be opened" + (e && e.message ? ": " + e.message : ".")); return null; }
+  if (!DESKTOP) return null;
+  if (B.state !== "ready" && !(await nativeCheck())) { pickFolder.failed = true; toast(B.state === "failed" ? BRIDGE_DOWN : "WorkReceipt is still starting. Try again in a moment."); return null; }
+  try { const r = await api("/api/native/pick_folder", { start: start || null }); if (!r.ok) { pickFolder.failed = true; toast(r.error || "The folder dialog could not be opened."); return null; } return r.path || null; }
+  catch (e) { pickFolder.failed = true; toast("The folder dialog could not be opened: " + e.message); return null; }
 }
+window.wrDropped = p => addProjectFlow(p);
 const fname = p => String(p || "").split(/[\\/]/).pop();
 async function fileAction(method, name, kind) {    // the page sends only a file NAME; the app resolves it against its own report history
-  const n = window.pywebview && window.pywebview.api;
-  if (n && typeof n[method] === "function") {
-    try { const r = await n[method](name, kind || "html"); if (!r || !r.ok) toast((r && r.error) || "Could not complete that action."); }
-    catch (e) { toast("The action could not be completed" + (e && e.message ? ": " + e.message : ".")); }
+  if (DESKTOP) {
+    try { const r = await api("/api/native/" + method, { name, kind: kind || "html" }); if (!r.ok) toast(r.error || "Could not complete that action."); }
+    catch (e) { toast("The action could not be completed: " + e.message); }
     return;
   }
-  if (DESKTOP) return toast(BRIDGE_DOWN);
-  if (method === "open_report") { const w = window.open("/report/" + encodeURIComponent(name), "_blank", "noopener"); if (!w) toast("The browser blocked the new tab. Allow pop-ups for this page."); return; }
+  if (method === "open") { const w = window.open("/report/" + encodeURIComponent(name), "_blank", "noopener"); if (!w) toast("The browser blocked the new tab. Allow pop-ups for this page."); return; }
   toast("Show in Finder is available in the desktop app.");
 }
-const openFile = (name, kind) => fileAction("open_report", name, kind);
+const openFile = (name, kind) => fileAction("open", name, kind);
 const revealFile = (name, kind) => fileAction("reveal", name, kind);
 async function addProjectFlow(typed) {
   let path = typed || await pickFolder();
-  if (!path) { if (!DESKTOP && !native()) { go("projects"); setTimeout(() => $("#repo")?.focus(), 50); toast("Type or paste a folder path, then press Use this folder"); } return null; }
+  if (!path) { if (!DESKTOP) { go("projects"); setTimeout(() => $("#repo")?.focus(), 50); toast("Type or paste a folder path, then press Use this folder"); } return null; }
   try { const r = await api("/api/project/add", { path }); await loadState(); pick(r.path); toast("Project added"); return r.path; }
   catch (e) { toast(e.message); return null; }
 }
@@ -261,6 +259,7 @@ function vSettings() {
   <div class="card sec"><h3>Always-redact terms</h3><label class="field"><span>One per line. Saved on this computer and applied to every report.</span><textarea id="s_terms" rows="4" style="border:1px solid var(--line-2);border-radius:10px;background:var(--surface);padding:9px 11px;font-size:13px;resize:vertical" spellcheck="false">${esc((s.redact_terms || []).join("\n"))}</textarea></label></div>
   <div class="card sec"><h3>About this app</h3><div class="grid gform"><div class="note"><b>Version</b><br>WorkReceipt ${esc(S.data.version)}</div><div class="note"><b>Engine</b><br>Local Python report engine · native macOS window</div><div class="note"><b>Server</b><br>${esc(location.host)} — this computer only</div><div class="note"><b>Data</b><br>Settings and history: <span class="mono path-txt">${esc(S.data.home)}</span></div></div></div>
   <div class="card sec"><h3>Privacy &amp; storage</h3><p class="note">Everything runs on this computer. No account, no telemetry, no uploads, no AI service. Detected secrets are never stored: settings and report history hold only project names, dates, counts and file paths. Local data: <span class="mono">${esc(S.data.home)}</span>. Reports are saved to your reports folder.</p></div>
+  ${DESKTOP ? `<div class="card sec"><h3>Diagnostics <button type="button" class="btn sm" id="diagretry" style="margin-left:auto">Check again</button></h3><p class="note" id="diag">Native services: <b>${B.state === "ready" ? "ready" : B.state === "failed" ? "not responding" : "starting"}</b>${B.info ? ` · pywebview ${esc(B.info.pywebview || "?")} · ${esc(B.info.platform || "")} · window ${B.info.window ? "created" : "missing"} · shown ${B.info.shown ? "yes" : "no"}${B.info.reason ? " · " + esc(B.info.reason) : ""}` : ""}</p></div>` : ""}
   <div class="card sec"><h3>Updates</h3><p class="note">Manual updates: download the newest WorkReceipt from its release page, open the disk image and drag the app to Applications, replacing the old one. Your settings and reports are kept. This app does not check for updates automatically.</p></div>
   <div class="card sec"><h3>PDF export</h3><p class="note">${S.data.chrome ? "“Export report” creates an HTML file and a PDF. The PDF is made from the already-masked HTML, on this computer." : "PDF export is not available in this environment. Open the exported HTML and use Print → Save as PDF."}</p></div></div>`;
 }
@@ -370,7 +369,7 @@ document.addEventListener("click", async e => {
   if (t.dataset.showfile) return revealFile(t.dataset.showfile, t.dataset.kind);
   if (t.dataset.delrep) { S.dlg = { kind: "delrep", name: t.dataset.delrep }; return showDlg(); }
   if (t.dataset.rmproj) { S.dlg = { kind: "rmproj", path: t.dataset.rmproj }; return showDlg(); }
-  if (t.dataset.choose) { const v = await pickFolder(); if (v) { $("#" + t.dataset.choose).value = v; await saveSettings("Folder saved"); } else if (!DESKTOP && !native()) toast("Type or paste the folder path"); return; }
+  if (t.dataset.choose) { const v = await pickFolder(); if (v) { $("#" + t.dataset.choose).value = v; await saveSettings("Folder saved"); } else if (!DESKTOP) toast("Type or paste the folder path"); return; }
   if (t.dataset.toggle) { const id = t.dataset.toggle; S.open.has(id) ? S.open.delete(id) : S.open.add(id); return render(); }
   if (t.dataset.close) return closeDlg();
   if (t.dataset.reveal) return doReveal(t.dataset.reveal);
@@ -389,7 +388,7 @@ document.addEventListener("click", async e => {
     case "obnext": S.ob.step++; showOb(); break;
     case "obback": S.ob.step--; showOb(); break;
     case "obskip": await finishOb("overview"); break;
-    case "obpick": { const path = await pickFolder(); if (!path) { S.ob.err = pickFolder.failed ? BRIDGE_DOWN : native() || DESKTOP ? "" : "Folder dialog is only available in the desktop app. Skip, then use Add project."; showOb(); break; }
+    case "obpick": { const path = await pickFolder(); if (!path) { S.ob.err = pickFolder.failed ? BRIDGE_DOWN : DESKTOP ? "" : "Folder dialog is only available in the desktop app. Skip, then use Add project."; showOb(); break; }
       try { const r = await api("/api/project/add", { path }); await loadState(); pick(r.path); await finishOb("projects"); } catch (er) { S.ob.err = er.message; showOb(); } break; }
     case "obdemo": { S.ob.busy = true; S.ob.err = ""; showOb(); try { await api("/api/demo", {}); await loadState(); const d = S.data.projects.find(x => x.demo); if (d) pick(d.path); await finishOb("projects"); } catch (er) { S.ob.busy = false; S.ob.err = er.message; showOb(); } break; }
     case "confirmdel": { const g = S.dlg; closeDlg(); try { if (g.kind === "delrep") await api("/api/report/delete", { name: g.name, confirm: true }); else { await api("/api/project/remove", { path: g.path }); if (S.repo === g.path) { S.repo = ""; S.prev = null; S.html = null; } } await loadState(); render(); toast(g.kind === "delrep" ? "Report deleted" : "Project removed from WorkReceipt"); } catch (er) { toast(er.message); } break; }
@@ -400,6 +399,7 @@ document.addEventListener("click", async e => {
     case "togglecleared": S.showCleared = !S.showCleared; render(); break;
     case "confirmrev": { const g = S.dlg; if (g?.pick && g.ack) { S.disp[g.id] = g.pick; closeDlg(); render(); toast("Review recorded"); } break; }
     case "addterm": { const v = $("#term").value.trim(); if (v) { S.terms.push(v); await rescan(); } break; }
+    case "diagretry": B.state = "wait"; await nativeCheck(); if (B.state !== "ready") B.state = "failed"; cache.screen = null; render(); toast(B.state === "ready" ? "Native services are ready" : BRIDGE_DOWN); break;
     case "savesettings": await saveSettings("Settings saved"); break;
   }
 });

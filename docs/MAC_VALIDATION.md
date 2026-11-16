@@ -18,3 +18,14 @@ Run on the Mac after rebuilding (v0.4.0):
 2. **Open report** (Report Studio banner and Reports screen) opens the HTML in the default browser; **Show in Finder** reveals it; **Open PDF** opens the PDF. Delete the file in Finder, click Open again: expect "That report file no longer exists…".
 3. Review dialog: Confirm stays disabled until a choice AND the acknowledgement are set; Tab/arrow/Space work; focus ring visible; Esc closes.
 4. Sidebar moon/sun icon toggles theme; date pills show hover/active; Overview Refresh; preview opens at top; Settings paths readable; About shows the Application Support path and v0.4.0.
+
+
+## Round 3: one consolidated procedure (v0.4.1)
+1. Rebuild (`desktop/build_macos.sh`), open the app. Settings → **Diagnostics** must say *Native services: ready*, with window "created", shown "yes".
+   If it says "not responding", send me `~/Library/Application Support/WorkReceipt/desktop-diag.json` (absent = the window never fired *shown*; present with
+   `available:false` = window created but not shown) — nothing else is needed.
+2. Settings: **Choose…** for both folders → NSOpenPanel opens, picked path fills the field and is saved; cancel changes nothing.
+3. Projects/Overview: **Add project** picker; drag a folder onto the window.
+4. Menu bar File/View items and ⌘O/⌘R/⌘P/⌘E/⌘1–5/⌘, work.
+5. Export a report (review all high items first): HTML and PDF are created; **Open report**, **PDF**, **Show in Finder** work from Studio and Reports; delete the file, then Open → "no longer exists" toast.
+6. Resize/fullscreen, ⌘Q leaves no running process (`pgrep -fl WorkReceipt`).

@@ -16,6 +16,9 @@ def _read(path, mode="rb"):
         return f.read()
 
 
+NATIVE = None          # set by the desktop shell: object with status(), pick_folder(start), open(name, kind), reveal(name, kind)
+
+
 class H(BaseHTTPRequestHandler):
     server_version = "WorkReceipt"
 
@@ -81,6 +84,23 @@ class H(BaseHTTPRequestHandler):
         self._json(200, {"settings": s, "projects": projects, "weekly": wk, "history": core.history()[::-1],
                          "version": core.VERSION, "home": core._home(), "chrome": core.pdf_available(), "git_ok": core.git_ok(), "claude_dir_ok": os.path.isdir(os.path.join(s["claude_dir"], "projects"))})
 
+    def _native(self, op, data):
+        """Native macOS actions over the same local, token-protected channel as everything else (no dependence on the WebView JS bridge)."""
+        n = NATIVE
+        if op == "status":
+            return self._json(200, n.status() if n else {"available": False, "reason": "not running in the desktop app"})
+        if not n:
+            return self._json(200, {"ok": False, "error": "Native actions are only available in the desktop app."})
+        if op == "pick_folder":
+            start = data.get("start")
+            return self._json(200, n.pick_folder(start if isinstance(start, str) else None))
+        if op in ("open", "reveal"):
+            name, kind = data.get("name"), data.get("kind") or "html"
+            if not isinstance(name, str) or kind not in ("html", "pdf"):
+                return self._json(400, {"error": "invalid request"})
+            return self._json(200, getattr(n, op)(name, kind))
+        return self._json(404, {"error": "unknown endpoint"})
+
     def do_POST(self):
         if not self._host_ok() or self.headers.get("X-WR-Token") != TOKEN:
             return self._send(403, "forbidden", "text/plain")
@@ -108,6 +128,8 @@ class H(BaseHTTPRequestHandler):
                     return self._json(400, {"error": "confirmation required"})
                 r = core.reveal(data, data.get("id"))
                 return self._send(200, json.dumps(r), "application/json")
+            if self.path.startswith("/api/native/"):
+                return self._native(self.path[len("/api/native/"):], data)
             if self.path == "/api/project/add":
                 return self._json(200, {"path": core.add_project(data.get("path"))})
             if self.path == "/api/project/remove":

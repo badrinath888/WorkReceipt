@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 import workreceipt as w
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 DISPOSITIONS = ("credential", "not_credential", "unsure")     # what the human decided; every choice keeps the value masked in the report
 MAX_ITEMISE = 400_000          # longer texts are reviewed as one group (no per-detection location or reveal)
 REVEAL_MAX = 2000

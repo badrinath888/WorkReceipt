@@ -22,27 +22,59 @@ def stop_server(srv):
     srv.server_close()
 
 
-class Api:
-    """Exposed to the page as window.pywebview.api. Paths only; never file contents.
+class Native:
+    """Native actions served to the page over the local HTTP channel (/api/native/*), independent of the WebView's JS bridge.
+    Holds the pywebview Window privately; every method returns plain JSON-able data and never raises into the HTTP layer."""
 
-    pywebview walks every PUBLIC attribute of this object and recurses into non-callable ones (webview/util.py get_functions).
-    Holding the Window as a public attribute therefore made it traverse the whole window/Cocoa object graph while building the
-    bridge, so window.pywebview.api never appeared in the packaged app. Keep every non-method attribute underscore-prefixed."""
-    _window = None
+    def __init__(self):
+        self._window = None
+        self._lock = threading.Lock()
+        self._ready = threading.Event()
 
-    def ping(self):
-        return True
+    def attach(self, window):
+        self._window = window
+        def shown():
+            self._ready.set()
+            try:                                          # decisive diagnostic: ~/Library/Application Support/WorkReceipt/desktop-diag.json
+                import json
+                with open(os.path.join(core._home(), "desktop-diag.json"), "w") as f:
+                    json.dump(self.status(), f, indent=1)
+            except Exception:
+                pass
+        try:
+            window.events.shown += shown
+        except Exception:
+            self._ready.set()
+
+    def status(self):
+        import platform
+        try:
+            import webview
+            ver = getattr(webview, "__version__", "?")
+        except Exception as e:
+            return {"available": False, "reason": "pywebview could not be imported: " + type(e).__name__}
+        return {"available": self._window is not None and self._ready.is_set(), "window": self._window is not None, "shown": self._ready.is_set(),
+                "pywebview": ver, "platform": sys.platform, "python": platform.python_version(), "version": core.VERSION}
 
     def pick_folder(self, start=None):
-        """Native folder dialog. Returns the chosen path, or None if the user cancelled. Raises if the dialog cannot be shown."""
-        import webview
-        kind = getattr(getattr(webview, "FileDialog", None), "FOLDER", None) or webview.FOLDER_DIALOG
-        d = start if isinstance(start, str) and os.path.isdir(start) else ""
-        r = self._window.create_file_dialog(kind, directory=d)
-        return str(r[0]) if r else None
+        """-> {ok, path|None, cancelled} or {ok: False, error}. One dialog at a time."""
+        if self._window is None or not self._ready.is_set():
+            return {"ok": False, "error": "The window is still starting. Try again in a moment."}
+        if not self._lock.acquire(blocking=False):
+            return {"ok": False, "error": "A folder dialog is already open."}
+        try:
+            import webview
+            kind = getattr(getattr(webview, "FileDialog", None), "FOLDER", None) or webview.FOLDER_DIALOG
+            d = start if isinstance(start, str) and os.path.isdir(start) else ""
+            r = self._window.create_file_dialog(kind, directory=d)
+            return {"ok": True, "path": str(r[0]), "cancelled": False} if r else {"ok": True, "path": None, "cancelled": True}
+        except Exception as e:
+            return {"ok": False, "error": "The folder dialog could not be opened (" + type(e).__name__ + ")."}
+        finally:
+            self._lock.release()
 
-    # The page sends only a report FILE NAME; core.resolve_report maps it to a path from the app's own history (never a frontend path).
-    def open_report(self, name, kind="html"):
+    # The page sends only a report FILE NAME; core.resolve_report maps it to a path from the app's own history.
+    def open(self, name, kind="html"):
         return self._launch(name, kind, [])
 
     def reveal(self, name, kind="html"):
@@ -89,8 +121,22 @@ MENU = [
 def build_menu(win):
     import webview.menu as m
     def act(cmd):
-        return lambda: win.evaluate_js(f"window.wrCommand({cmd!r})")
+        return lambda: win.run_js(f"window.wrCommand({cmd!r})")
     return [m.Menu(title, [m.MenuSeparator() if i is None else m.MenuAction(i[0], act(i[1])) for i in items]) for title, items in MENU]
+
+
+def _drop_handler(win):
+    """Dropped folders: the path is only visible to Python (DOM drop event), so hand it to the page via run_js."""
+    try:
+        from webview.dom import DOMEventHandler
+        def on_drop(e):
+            files = (e.get("dataTransfer") or {}).get("files") or []
+            p = files[0].get("pywebviewFullPath") if files else None
+            if p:
+                win.run_js(f"window.wrDropped({p!r})")
+        win.events.loaded += lambda: win.dom.document.events.drop.__iadd__(DOMEventHandler(on_drop, True, True))
+    except Exception:
+        pass            # drag-and-drop is optional; Add project always works
 
 
 def main():
@@ -100,9 +146,11 @@ def main():
         core.PDF_BACKEND = pdf_mac.render_pdf        # packaged PDF export: system WebKit, no Chrome required
     srv, url = start_server()
     atexit.register(lambda: stop_server(srv))
-    api = Api()
-    win = webview.create_window("WorkReceipt", url + "?shell=desktop", js_api=api, width=1180, height=760, min_size=MIN_SIZE)
-    api._window = win
+    nat = Native()
+    app.NATIVE = nat
+    win = webview.create_window("WorkReceipt", url + "?shell=desktop", width=1180, height=760, min_size=MIN_SIZE)
+    nat.attach(win)
+    _drop_handler(win)
     win.events.closed += lambda: stop_server(srv)
     try:
         webview.start(menu=build_menu(win))

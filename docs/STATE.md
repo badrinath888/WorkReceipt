@@ -46,3 +46,9 @@ NOT tested: any macOS run, real pywebview/WKWebView window (bridge only stubbed)
 ## Blockers
 - No macOS in this environment: .app/.dmg unbuilt and unvalidated. 
 - Signing/notarization needs Apple Developer ID (not available).
+
+
+## v0.4.1 — application-wide interaction audit + native transport rewrite
+- Native dialogs/open/Finder moved from pywebview JS bridge to local HTTP `/api/native/*` (see INTERACTION_AUDIT.md). Menu uses `run_js`. `desktop-diag.json` + Settings → Diagnostics added.
+- `test_interaction_audit.py` exercises every screen with real clicks; 69 matrix rows: PASS 60, FAIL 0, BLOCKED 9 (macOS-only). 201 tests pass on Linux.
+- NOT verified on macOS: the real native host, Cocoa dialogs, Finder/open, PDF, menu bar, drag-drop. Procedure: MAC_VALIDATION.md Round 3.
