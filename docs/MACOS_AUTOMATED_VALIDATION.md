@@ -27,3 +27,18 @@ Quit WorkReceipt first (it would otherwise change the real-data fingerprint), st
 - Native dialogs (folder picker, Open, Show in Finder) are not automated.
 - A heuristic cannot see confidential facts written as ordinary prose; this validates the controls, not your wording.
 - If a pre-existing test fails on macOS it is reported as a FAIL, not skipped.
+
+
+## First Mac run (macOS 27.2, 23 PASS / 5 FAIL) and what was found
+| Failed stage | Root cause | Class | Fix |
+|---|---|---|---|
+| Native HTML/PDF export: `validation ['metadata']` | The PDF metadata rule rejected an empty Creator/Producer. WKWebView/Quartz PDFs carry a Producer but no Creator; PDFKit reports the missing field as `""`, which did not match the engine-string pattern. Most likely cause (inferred from the code; the exact fields were not in the report). | Product defect (macOS compatibility) | `client_safe.pdf_metadata_problems`: an empty Creator/Producer is allowed. Every other rule is unchanged (Title empty or the report title, Author/Subject/Keywords/other fields empty, no private term or local account/machine name anywhere). Refusals name the field (`metadata_author`...), never the value. |
+| Source app and packaged app: `approval was refused` | Finding ids are salted per process (`app_core._SALT`), so the harness computed its Privacy-Center review in its own process and the launched app saw every high finding as unreviewed (`reason=findings`). Reproduced on Linux with a second process. | Test-harness defect; the refusal was correct, expected security behaviour | `wrv.review_via_api`: review through the app under test's own `/api/preview`, as the UI does. Approval is still required: dropping one decision is refused again (tested). |
+| Regression suite: 8 failed, 26 skipped | The failing test names were not in the report. Known defects fixed: native-host call assertions raced the page's request (fixed sleeps / immediate reads) in the browser tests. The 26 skips are consistent with poppler not being installed. | Test defects + missing dependency | Polling `settle()`; the report now lists every failing test with its first error line (`failed-tests.txt` in the sandbox). |
+| Client-Safe browser stage FAIL with 12 passed | The stage requires all of its tests to pass: 13 ran, 12 passed, one failed. It was not named. The client export in that suite runs Chrome + the pypdf fallback when poppler is absent, so it is the first suspect, but this is unconfirmed. | Unconfirmed; now diagnosable | The failing browser test is named in the stage detail. |
+| (skips) | Skipped Client-Safe / PDF-quality / browser / script tests counted as coverage. | Harness gap | `no critical tests were skipped` is a required check; Chrome and poppler discovery adds Homebrew dirs to PATH and prints `brew install poppler` / `brew install --cask google-chrome`. |
+
+### If something still fails, send these (all synthetic, safe to paste)
+1. The saved `validation-results/macos-validation-*.txt` (failing tests and PDF metadata fields are in it; values that are not allowed are shown only as lengths).
+2. `failed-tests.txt` and `logs/pytest.log` from the sandbox directory printed at the end (kept on failure).
+3. Output of `python scripts/pdfkit_check.py <exported.pdf> --html <exported.html>`.

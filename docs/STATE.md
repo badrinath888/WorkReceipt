@@ -76,3 +76,5 @@ NOT tested: any macOS run, real pywebview/WKWebView window (bridge only stubbed)
 - `scripts/validate_macos.sh`: one command, sandboxed, PASS/FAIL report with exit codes. See docs/MACOS_AUTOMATED_VALIDATION.md for stages and what ran where.
 - Linux `--selftest` passes (304 tests + harness logic; labelled not-macOS evidence). macOS-only stages (WKWebView PDF, PDFKit, live app launch) are written but unexecuted until run on a Mac.
 - Fixed: Settings text typed while a folder save was in flight was wiped by the re-render (surfaced as a flaky audit test).
+
+- First Mac run: 5 stage failures traced (see MACOS_AUTOMATED_VALIDATION.md): PDF metadata rule rejected an absent Creator (fixed, narrowly), live-app approval was a harness defect (per-process finding ids), plus test races and unreported skips. 314 tests pass on Linux. macOS re-run pending.
