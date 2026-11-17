@@ -5,7 +5,7 @@ import json, os, random, re, shutil, subprocess, sys, tempfile, types, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import workreceipt as w
-CHROME = next((c for c in ("/usr/bin/google-chrome", "/usr/bin/chromium") if os.path.exists(c)), None)
+CHROME = next((c for c in (os.environ.get("WR_CHROME"), "/usr/bin/google-chrome", "/usr/bin/chromium", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome") if c and os.path.exists(c)), None)
 HAVE = bool(CHROME and shutil.which("pdftotext") and shutil.which("pdftoppm") and shutil.which("pdfinfo"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 RESULTS = []

@@ -3,7 +3,7 @@ The macOS window, native dialogs and WKWebView PDF are NOT exercised here (see d
 import json, os, shutil, subprocess, sys, tempfile, threading, unittest
 from http.server import ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-CHROME = next((c for c in ("/usr/bin/google-chrome", "/usr/bin/chromium") if os.path.exists(c)), None)
+CHROME = next((c for c in (os.environ.get("WR_CHROME"), "/usr/bin/google-chrome", "/usr/bin/chromium", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome") if c and os.path.exists(c)), None)
 try:
     from playwright.sync_api import sync_playwright
 except ImportError:

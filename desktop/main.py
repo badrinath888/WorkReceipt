@@ -139,12 +139,20 @@ def _drop_handler(win):
         pass            # drag-and-drop is optional; Add project always works
 
 
-def main():
-    import webview
+def install_native_backends():
+    """macOS: PDF export through system WebKit and Client-Safe verification through PDFKit. Shared with scripts/macos_native.py so the
+    automated validation exercises exactly the wiring the app uses. No-op elsewhere (Chrome / poppler fallbacks apply)."""
     if sys.platform == "darwin":
         from desktop import pdf_mac
         core.PDF_BACKEND = pdf_mac.render_pdf        # packaged PDF export: system WebKit, no Chrome required
         core.PDF_INSPECTOR = pdf_mac.extract_facts    # Client-Safe Mode: PDFKit reads the finished PDF back before it is shared
+        return True
+    return False
+
+
+def main():
+    import webview
+    install_native_backends()
     srv, url = start_server()
     atexit.register(lambda: stop_server(srv))
     nat = Native()

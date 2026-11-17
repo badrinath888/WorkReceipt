@@ -512,7 +512,11 @@ async function saveSettings(msg) {                  // persists every Settings f
   try {
     S.data.settings = await api("/api/settings", { claude_dir: $("#s_claude").value.trim(), out_dir: $("#s_out").value.trim(), author: $("#s_author").value.trim(), client: $("#s_client").value.trim(),
       theme: S.data.settings.theme, redact_terms: $("#s_terms").value.split("\n") });
-    await loadState(); if (!S.author) S.author = S.data.settings.author; if (!S.client) S.client = S.data.settings.client; cache.screen = null; render(); toast(msg);
+    await loadState(); if (!S.author) S.author = S.data.settings.author; if (!S.client) S.client = S.data.settings.client;
+    const typed = ["s_author", "s_client", "s_terms"].map(id => [id, document.getElementById(id)]).filter(x => x[1]).map(x => [x[0], x[1].value]);   // text typed while the save was in flight
+    cache.screen = null; render();
+    typed.forEach(([id, v]) => { const el = document.getElementById(id); if (el) el.value = v; });                                                       // must survive the re-render
+    toast(msg);
   } catch (er) { toast(er.message); }
 }
 function rangeFor(k) {
