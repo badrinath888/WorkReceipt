@@ -78,3 +78,8 @@ NOT tested: any macOS run, real pywebview/WKWebView window (bridge only stubbed)
 - Fixed: Settings text typed while a folder save was in flight was wiped by the re-render (surfaced as a flaky audit test).
 
 - First Mac run: 5 stage failures traced (see MACOS_AUTOMATED_VALIDATION.md): PDF metadata rule rejected an absent Creator (fixed, narrowly), live-app approval was a harness defect (per-process finding ids), plus test races and unreported skips. 314 tests pass on Linux. macOS re-run pending.
+
+
+## v0.6.1 — second Mac run repair
+- Fixes for the second macOS run (see MACOS_AUTOMATED_VALIDATION.md): PDF metadata read from file bytes as well as the extractor, build fingerprint to catch stale packaged apps, footer-token tolerance for the pypdf path, onboarding saves before closing, platform select-all key in tests, poppler/PDF-security release gate.
+- 349 tests pass on Linux (323 + 26 expected skips with poppler hidden). macOS re-run pending; native validation is NOT passed.

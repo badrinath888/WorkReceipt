@@ -42,3 +42,27 @@ Quit WorkReceipt first (it would otherwise change the real-data fingerprint), st
 1. The saved `validation-results/macos-validation-*.txt` (failing tests and PDF metadata fields are in it; values that are not allowed are shown only as lengths).
 2. `failed-tests.txt` and `logs/pytest.log` from the sandbox directory printed at the end (kept on failure).
 3. Output of `python scripts/pdfkit_check.py <exported.pdf> --html <exported.html>`.
+
+
+## Second Mac run: root causes and fixes (v0.6.1, code commit 20ac8a1)
+Everything below was reproduced or reasoned from code on Linux. **None of it is macOS-verified until you re-run the validation on a Mac.**
+
+| Finding | Root cause | Fix |
+|---|---|---|
+| `native: private text in PDF metadata is detected` (validator got `[]`) | The validator rejects any Title that is not empty or the report title, so it can only return `[]` if the Title it was given was empty or allowed. The harness injected the title via the HTML `<title>`; whether WKWebView copies that into the PDF was never checked, and PDFKit/the extractor might also not return it. From Linux the exact stage that lost it cannot be proven. | The harness now injects the private Title/Author/Subject/Keywords directly into the real WKWebView PDF and reports each stage (written / read by PDFKit / product / independent). The product validator also reads the PDF Info dictionary from the file bytes, so a field the extractor drops is still refused. Checks are not weakened. A diagnostic row states whether WKWebView copies `<title>` at all. |
+| `PdfError: verify: the PDF has no selectable text` (optional probe) | The verifier needs 20 text characters; the probe page had 10. Not related to real exports. | Longer probe text. |
+| Packaged `.app`: `export refused: validation ['metadata']` | Most likely a build from before the metadata fix: the version number (0.6.0) never changed, so nothing could tell. Not provable from Linux. | Builds embed a source fingerprint (`buildinfo.py`); the harness runs `WorkReceipt --build-info` and the running app reports its fingerprint. A stale or unidentifiable app is a required FAIL and is not launched. Version is now 0.6.1. |
+| `test_client_safe_ui::test_full_flow...` timeout | No poppler, so PDF read-back used pypdf, which glues the footer page number to the footer name (`1workreceipt`); the extra-text check refused the export. Reproduced on Linux by hiding poppler. | Tokens made only of digits and footer words are footer text. Any other extra text is still refused. |
+| `test_2_workflow_state...` (e2e and audit) | Test assumption: on macOS Ctrl+A moves the caret to the line start, so "select all" did not select and the original text stayed. Consistent with the symptom, not observed on a Mac. | Test uses Cmd+A on macOS and asserts the selection first. |
+| `test_onboarding` Finish setup | Real defect: the dialog closed before the setting was saved. | Save first, then close; regression test with a slow save fails on the old code. |
+| 26 skips | poppler missing (Linux with poppler hidden gives exactly 26). | Preflight warning; the PDF security tests are a named release gate. |
+
+### Release approval needs
+1. `brew install poppler` and Chrome installed. Without poppler the run cannot PASS.
+2. A packaged app built from this checkout. `scripts/validate_macos.sh --rebuild` rebuilds first.
+3. A macOS run with every required check PASS. Linux `--selftest` output is never macOS validation.
+
+### Re-run on your Mac (one command)
+```bash
+cd /path/to/WorkReceipt && git checkout feature/client-safe-mode && git pull && brew install poppler && scripts/validate_macos.sh --rebuild
+```
