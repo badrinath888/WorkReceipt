@@ -49,7 +49,8 @@ MESSAGES = {
 }
 FAILURE_TEXT = {"mismatch": "the file did not match the approved content", "markup": "unexpected markup", "attr": "unexpected attribute", "link": "a link or embedded resource",
                 "source": "forbidden source content", "text": "text that is not part of the approved content", "secret": "sensitive-looking content",
-                "metadata": "document metadata", "annotation": "an annotation, attachment or script", "pdf_text": "extra or hidden text", "pdf_unreadable": "the PDF could not be read back",
+                "metadata": "document metadata", "metadata_title": "a PDF title that is not the report title", "metadata_author": "a PDF author field", "metadata_subject": "a PDF subject field",
+                "metadata_keywords": "PDF keywords", "metadata_creator": "a PDF creator field", "metadata_producer": "a PDF producer field", "annotation": "an annotation, attachment or script", "pdf_text": "extra or hidden text", "pdf_unreadable": "the PDF could not be read back",
                 "pdf_unverified": "no way to verify the PDF on this computer", "filename": "an unsafe file name", "empty": "no readable text"}
 
 
@@ -509,6 +510,41 @@ def _mentions(text, private_terms, local_ids):
     return any(len(_squeeze(t)) >= 3 and _squeeze(t) in sq for t in private_terms) or any(len(_squeeze(i)) >= 4 and _squeeze(i) in sq for i in local_ids)
 
 
+def pdf_metadata_problems(meta, title, private_terms=(), local_ids=()):
+    """{field: reason} for every PDF information-dictionary field that is not allowed. Policy (unchanged, deliberately narrow):
+    Title is empty or exactly the approved report title; Author, Subject and Keywords are empty; Creator and Producer may only
+    name the rendering engine (_PRODUCER_OK); dates and Trapped are ignored; any other field must be empty; and NO field may mention a
+    private term or this computer's account/machine name. Reasons are short codes, never the value."""
+    out = {}
+    for k, val in meta.items():
+        k = str(k).lstrip("/")
+        if k in ("CreationDate", "ModDate", "Trapped"):
+            continue
+        val = str(val or "")
+        if k == "Title":
+            if val not in ("", title):
+                out[k] = "title_differs"
+        elif k in ("Creator", "Producer"):
+            if val.strip() and not _PRODUCER_OK.match(val.strip()):
+                out[k] = "not_an_engine_string"
+        elif val.strip():
+            out[k] = "must_be_empty"
+        if val and _mentions(val, private_terms, local_ids):
+            out[k] = "mentions_private_or_local_name"
+    return out
+
+
+def describe_pdf_metadata(meta, title, private_terms=(), local_ids=()):
+    """Diagnostic text for the validation harness: allowed values are shown, anything else only as its length, so an account name is never echoed."""
+    probs = pdf_metadata_problems(meta, title, private_terms, local_ids)
+    parts = []
+    for k, v in sorted((str(k).lstrip("/"), str(v or "")) for k, v in meta.items()):
+        if k in ("CreationDate", "ModDate", "Trapped"):
+            continue
+        parts.append(f"{k}={'(empty)' if not v.strip() else (repr(v[:90]) if k not in probs else f'<{len(v)} chars, rejected: ' + probs[k] + '>')}")
+    return "; ".join(parts) or "(no information dictionary)"
+
+
 def validate_pdf(path, r, html_text, facts, private_terms=(), local_ids=None):
     """`facts` come from an extractor: {"text": str, "meta": {Title, Author, ...}, "annotations": int, "attachments": int} or None when no
     extractor could read the file. None, an unreadable file or anything unexpected FAILS: the check must complete to pass."""
@@ -529,20 +565,9 @@ def validate_pdf(path, r, html_text, facts, private_terms=(), local_ids=None):
     if facts.get("annotations") or facts.get("attachments"):
         bad.add("annotation")
     meta = {str(k).lstrip("/"): str(v or "") for k, v in (facts.get("meta") or {}).items()}
-    title = title_of(r)
-    for k, val in meta.items():
-        if k in ("CreationDate", "ModDate", "Trapped"):
-            continue
-        if k == "Title":
-            if val not in ("", title):
-                bad.add("metadata")
-        elif k in ("Creator", "Producer"):
-            if not _PRODUCER_OK.match(val.strip()):
-                bad.add("metadata")
-        elif val.strip():
-            bad.add("metadata")
-        if val and _mentions(val, private_terms, lids):
-            bad.add("metadata")
+    for field, why in pdf_metadata_problems(meta, title_of(r), private_terms, lids).items():
+        bad.add("metadata")
+        bad.add("metadata_" + field.lower())                                 # field NAME only (never the value), so a refusal can be diagnosed
     text = facts.get("text")
     if not isinstance(text, str):
         return sorted(bad | {"pdf_unverified"})

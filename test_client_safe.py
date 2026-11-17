@@ -76,6 +76,57 @@ class Base(unittest.TestCase):
             self.assertNotIn(v.lower(), text.lower(), f"{k} leaked {label}")
 
 
+class PdfMetadataPolicy(unittest.TestCase):
+    """Root cause of the macOS 'validation [metadata]' export refusal: WKWebView/Quartz PDFs carry a Producer but NO Creator, PDFKit reports the
+    missing field as an empty string, and the old rule treated an empty Creator/Producer as 'not an engine string'. An absent field is
+    harmless; everything that could carry information stays refused. Refusals now name the FIELD (never the value)."""
+    TITLE = "Work report for Initech"
+    WEBKIT = {"Title": "", "Author": "", "Subject": "", "Keywords": "", "Creator": "", "Producer": "macOS Version 27.2 (Build 27C44) Quartz PDFContext",
+              "CreationDate": "D:20261117090000Z", "ModDate": "D:20261117090000Z"}
+
+    def problems(self, **over):
+        return cs.pdf_metadata_problems(dict(self.WEBKIT, **over), self.TITLE, ("Globex", "oracle-fin-01"), ["zelda-quill", "mbp-zelda-7"])
+
+    def test_webkit_shape_with_no_creator_is_allowed(self):
+        self.assertEqual(self.problems(), {})
+        self.assertEqual(self.problems(Creator="", Producer=""), {})                       # a PDF with neither is fine: nothing to leak
+        for p in ("macOS Version 15.1 (Build 24B83) Quartz PDFContext", "macOS Version 27.2 (Build 27C5039g) Quartz PDFContext", "Quartz PDFContext", "Skia/PDF m153"):
+            self.assertEqual(self.problems(Producer=p), {}, p)
+        self.assertEqual(self.problems(Title=self.TITLE), {})
+
+    def test_everything_that_can_carry_information_is_still_refused(self):
+        cases = {
+            "Author": ("Badri Tiruveedula", "must_be_empty"), "Subject": ("quarterly numbers", "must_be_empty"), "Keywords": ("billing, internal", "must_be_empty"),
+            "Title": ("Untitled", "title_differs"), "Creator": ("/Users/zelda-quill/work/billing-core", "mentions_private_or_local_name"),
+            "Producer": ("WorkReceipt build by zelda", "not_an_engine_string"), "Company": ("Globex", "mentions_private_or_local_name"), "Department": ("Finance", "must_be_empty"),
+        }
+        for field, (val, why) in cases.items():
+            self.assertEqual(self.problems(**{field: val}).get(field), why, field)
+        self.assertEqual(self.problems(Creator="/Users/someone/project").get("Creator"), "not_an_engine_string")
+        self.assertEqual(self.problems(Producer="Quartz PDFContext oracle-fin-01").get("Producer"), "mentions_private_or_local_name")
+        self.assertEqual(self.problems(Title="zelda-quill").get("Title"), "mentions_private_or_local_name")
+        self.assertEqual(self.problems(Creator="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36"), {})
+        self.assertTrue(self.problems(Creator="Mozilla/5.0 (X11; mbp-zelda-7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/1.0"))
+
+    def test_validation_names_the_field_but_never_the_value(self):
+        f = Flow(self._ws())
+        d = draft(); pv = f.preview(d); st = core._client_state(f.o, d, f.ap, core.load_settings())
+        pdf = os.path.join(self.ws.root, "x.pdf"); open(pdf, "wb").write(b"%PDF-1.4\n" + b"0" * 200)
+        base = {"text": "Work report for Initech Rebuilt the invoice screen so customers can pay online", "annotations": 0, "attachments": 0}
+        ok = cs.validate_pdf(pdf, st["report"], pv["html"], dict(base, meta=self.WEBKIT), st["terms"], [])
+        self.assertEqual(ok, [])
+        bad = cs.validate_pdf(pdf, st["report"], pv["html"], dict(base, meta=dict(self.WEBKIT, Author="Badri Tiruveedula")), st["terms"], [])
+        self.assertIn("metadata", bad); self.assertIn("metadata_author", bad)
+        resp = core._blocked("validation", bad)
+        self.assertIn("a PDF author field", resp["message"]); self.assertNotIn("Badri", json.dumps(resp))
+        shown = cs.describe_pdf_metadata(dict(self.WEBKIT, Author="Badri Tiruveedula"), self.TITLE, st["terms"], [])
+        self.assertNotIn("Badri", shown); self.assertIn("rejected", shown); self.assertIn("Quartz PDFContext", shown)
+
+    def _ws(self):
+        self.ws = hostile_ws(); self.addCleanup(self.ws.done)
+        return self.ws
+
+
 class ModelAllowlist(Base):
     def test_only_allowlisted_fields_serialise_and_unknown_fields_are_dropped(self):
         d = draft(raw_prompts=["Connect billing to oracle-fin-01"], repo_url="https://github.com/acme-private/billing-core", absolute_path="/Users/zelda-quill",

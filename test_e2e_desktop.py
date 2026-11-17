@@ -10,6 +10,14 @@ except ImportError:
     sync_playwright = None
 
 
+def settle(pg, native, k, ms=8000):
+    """A click returns before the page's fetch to the (stub) native host has arrived; wait until the host has seen k calls instead of racing it."""
+    waited = 0
+    while len(native.calls) < k and waited < ms:
+        pg.wait_for_timeout(50); waited += 50
+    return native.calls
+
+
 @unittest.skipUnless(sync_playwright and CHROME, "playwright/Chrome not available")
 class FakeNative:
     """Same interface as desktop.main.Native. Behaviour is scripted per test; every call is recorded."""
@@ -229,11 +237,11 @@ class E2E(unittest.TestCase):
         n = self.native(); pg = self.page(); self.load_demo(pg, "?shell=desktop"); self.review_all(pg)
         pg.click(".tab[data-go=studio]"); pg.click("#mode-private"); pg.click("#export"); pg.wait_for_selector(".xcard.ok:has-text('Exported')", timeout=60000)
         pg.click(".xcard [data-open][data-kind=html]"); pg.click(".xcard [data-showfile]")
-        calls = n.calls; self.assertEqual([c[0] for c in calls], ["open", "reveal"])
+        calls = settle(pg, n, 2); self.assertEqual([c[0] for c in calls], ["open", "reveal"])
         for c in calls: self.assertTrue(c[1].endswith((".html", ".pdf")) and "/" not in c[1] and "\\" not in c[1], c)
         n.res = {"ok": False, "error": "That report file no longer exists. It may have been moved or deleted"}   # simulate backend refusal
         pg.click(".xcard [data-open][data-kind=html]"); pg.wait_for_selector("#toast.on:has-text('no longer exists')")
-        pg.click(".tab[data-go=reports]"); pg.click("[data-open]"); pg.click("[data-showfile]"); self.assertEqual(len(n.calls), 5)
+        pg.click(".tab[data-go=reports]"); pg.click("[data-open]"); pg.click("[data-showfile]"); self.assertEqual(len(settle(pg, n, 5)), 5)
         self.assertEqual(self.errs, []); pg.close()
 
     def test_c_theme_icon_pills_overview_refresh_preview_settings(self):
@@ -320,7 +328,7 @@ class ExportCard(unittest.TestCase):
         self.assertEqual(os.path.basename(h["pdf"]), pn); self.assertTrue(os.path.isfile(h["html"]) and os.path.isfile(h["pdf"]))   # files really exist
         self.assertEqual(open(h["pdf"], "rb").read(5), b"%PDF-")
         pg.click(".xcard [data-open][data-kind=pdf]"); pg.click(".xcard [data-open][data-kind=html]"); pg.click(".xcard [data-showfile]")
-        self.assertEqual([(c[0], c[2]) for c in n.calls], [("open", "pdf"), ("open", "html"), ("reveal", "pdf")])
+        settle(pg, n, 3); self.assertEqual([(c[0], c[2]) for c in n.calls], [("open", "pdf"), ("open", "html"), ("reveal", "pdf")])
         self.assertTrue(all(c[1] == os.path.basename(h["pdf"] if c[2] == "pdf" else h["html"]) for c in n.calls))               # names only, never paths
         pg.close()
 
@@ -333,7 +341,7 @@ class ExportCard(unittest.TestCase):
         self.assertEqual(pg.locator(".xcard [data-kind=pdf][data-open]").count(), 0)
         self.assertEqual(pg.locator(".xcard .xact .btn").all_inner_texts(), ["Open HTML", "Show in Finder"])
         self.assertFalse(pg.locator(".xd").evaluate("e=>e.open")); pg.click(".xd summary"); self.assertIn("…", pg.inner_text(".xd")); self.assertNotIn("/Users", pg.inner_text(".xcard"))
-        pg.click(".xcard [data-open]"); pg.wait_for_timeout(300); self.assertEqual(n.calls[-1][:2], ("open", "acme-2026.html")); pg.close()
+        k = len(n.calls); pg.click(".xcard [data-open]"); settle(pg, n, k + 1); self.assertEqual(n.calls[-1][:2], ("open", "acme-2026.html")); pg.close()
 
     def test_failure_state_offers_retry_and_no_file_actions(self):
         self.native(); pg = self.page(); self.go_studio(pg)

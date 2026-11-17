@@ -16,6 +16,8 @@ if [ "$OS" != "Darwin" ] && [ "$SELF" != 1 ]; then
 fi
 [ "$SELF" = 1 ] && [ "$OS" = "Darwin" ] && { echo "--selftest is for Linux only" >&2; exit 64; }
 
+# Homebrew is not on PATH in every shell (IDE terminals, ssh, cron); poppler and chrome are looked up there too.
+for d in /opt/homebrew/bin /usr/local/bin; do [ -d "$d" ] && case ":$PATH:" in *":$d:"*) ;; *) PATH="$PATH:$d";; esac; done; export PATH
 PY="${PYTHON:-python3}"
 "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null || { echo "error: need Python >= 3.9 (set PYTHON=/path/to/python3)" >&2; exit 64; }
 
@@ -48,6 +50,8 @@ fi
 CHROME_BIN="${WR_CHROME:-}"
 if [ -z "$CHROME_BIN" ]; then for c in "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" /usr/bin/google-chrome /usr/bin/chromium; do [ -x "$c" ] && CHROME_BIN="$c" && break; done; fi
 [ -n "$CHROME_BIN" ] && export WR_CHROME="$CHROME_BIN"
+
+R deps "$WRV_RESULTS"
 
 # ---- 3. regression + security suite (existing tests, unmodified assertions)
 if [ "$QUICK" = 1 ]; then

@@ -2,6 +2,7 @@
 """Result bookkeeping and the final PASS/FAIL report for scripts/validate_macos.sh. Standard library only.
   wrv_report.py add NAME STATUS [DETAIL] [--optional]      append one result (STATUS: PASS FAIL SKIP BLOCKED)
   wrv_report.py junit FILE RESULTS [--min-client-safe N] [--min-ui N]   turn a pytest junit file into results
+  wrv_report.py deps RESULTS                                     check Chrome + poppler are discoverable (with install instructions)
   wrv_report.py report RESULTS [--out FILE] [--header TEXT]     print the report; exit 0 only if every REQUIRED result is PASS
   wrv_report.py snapshot-real                                    hash of the real app-data and reports folders (to prove they were not touched)
 Exit codes of `report`: 0 PASS, 1 a required check FAILED, 2 incomplete (a required check was BLOCKED or SKIPPED)."""
@@ -15,31 +16,63 @@ def add(path, name, status, detail="", required=True):
         f.write(json.dumps({"name": name, "status": status, "detail": detail[:500], "required": required}) + "\n")
 
 
+CRITICAL = ("test_client_safe", "test_client_safe_ui", "test_pdf_quality", "test_validation_scripts", "test_e2e_desktop", "test_interaction_audit")
+
+
+def _short(c):
+    node = c.find("failure") if c.find("failure") is not None else c.find("error")
+    msg = ((node.get("message") or "") if node is not None else "").strip().splitlines()
+    return f"{c.get('classname', '').split('.')[0]}::{c.get('name')}" + (f" ({msg[0][:110]})" if msg else "")
+
+
 def junit(path, results, min_cs, min_ui):
     root = ET.parse(path).getroot()
-    cases = list(root.iter("testcase"))
     n = {"passed": 0, "failed": 0, "skipped": 0}
-    by, skips = {}, {}
-    for c in cases:
+    by, skips, failed_by, crit_skips = {}, {}, {}, {}
+    all_failed = []
+    for c in root.iter("testcase"):
         cls = c.get("classname", "").split(".")[0]
         if c.find("failure") is not None or c.find("error") is not None:
             k = "failed"
+            all_failed.append(_short(c))
+            failed_by.setdefault(cls, []).append(_short(c))
         elif c.find("skipped") is not None:
             k = "skipped"
             msg = (c.find("skipped").get("message") or "skipped")[:70]
             skips[msg] = skips.get(msg, 0) + 1
+            if cls in CRITICAL:
+                crit_skips[msg] = crit_skips.get(msg, 0) + 1
         else:
             k = "passed"
         n[k] += 1
         by.setdefault(cls, {"passed": 0, "failed": 0, "skipped": 0})[k] += 1
+    if all_failed:                                               # full list next to the results, so a failure can be diagnosed without re-running
+        open(os.path.join(os.path.dirname(results), "failed-tests.txt"), "w", encoding="utf-8").write("\n".join(all_failed) + "\n")
     why = "; ".join(f"{v} skipped: {k}" for k, v in sorted(skips.items(), key=lambda kv: -kv[1])[:3])
+    names = (" FAILED: " + " | ".join(all_failed[:8]) + (" ..." if len(all_failed) > 8 else "")) if all_failed else ""
     add(results, "regression + security suite (pytest, all existing tests)", "PASS" if n["failed"] == 0 and n["passed"] > 0 else "FAIL",
-        f"{n['passed']} passed, {n['failed']} failed, {n['skipped']} skipped" + (f" ({why})" if why else ""))
-    cs = by.get("test_client_safe", {"passed": 0})["passed"]
-    ui = by.get("test_client_safe_ui", {"passed": 0})["passed"]
-    add(results, "Client-Safe backend adversarial tests actually ran", "PASS" if cs >= min_cs and not by.get("test_client_safe", {}).get("failed") else "FAIL", f"{cs} passed (need >= {min_cs})")
-    add(results, "Client-Safe real-click browser tests actually ran", "PASS" if ui >= min_ui and not by.get("test_client_safe_ui", {}).get("failed") else "FAIL",
-        f"{ui} passed (need >= {min_ui})" + ("" if ui >= min_ui else "; install Google Chrome or set WR_CHROME=/path/to/chrome"))
+        f"{n['passed']} passed, {n['failed']} failed, {n['skipped']} skipped" + (f" ({why})" if why else "") + names)
+    cs, csf = by.get("test_client_safe", {"passed": 0})["passed"], failed_by.get("test_client_safe", [])
+    ui, uif = by.get("test_client_safe_ui", {"passed": 0})["passed"], failed_by.get("test_client_safe_ui", [])
+    add(results, "Client-Safe backend adversarial tests actually ran and passed", "PASS" if cs >= min_cs and not csf else "FAIL",
+        f"{cs} passed (need >= {min_cs})" + (f"; FAILED: {' | '.join(csf[:5])}" if csf else ""))
+    add(results, "Client-Safe real-click browser tests actually ran and passed", "PASS" if ui >= min_ui and not uif else "FAIL",
+        f"{ui} passed (need >= {min_ui})" + (f"; FAILED: {' | '.join(uif[:5])}" if uif else "") + ("" if ui >= min_ui else "; install Google Chrome or set WR_CHROME=/path/to/chrome"))
+    cs_total = sum(crit_skips.values())
+    add(results, "no critical tests were skipped", "PASS" if not cs_total else "FAIL",
+        "none skipped in the Client-Safe, PDF-quality, browser and script suites" if not cs_total else
+        f"{cs_total} critical test(s) skipped, so coverage is incomplete: " + "; ".join(f"{v}x {k}" for k, v in crit_skips.items()) + ". Run: brew install poppler; brew install --cask google-chrome")
+
+
+def deps(results):
+    import shutil
+    mac = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    chrome = next((c for c in (os.environ.get("WR_CHROME"), shutil.which("google-chrome"), shutil.which("chromium"), mac if os.path.exists(mac) else None) if c and os.path.exists(c)), None)
+    add(results, "Google Chrome found (browser tests and Chrome PDF path)", "PASS" if chrome else "FAIL",
+        chrome or "not found. Install: brew install --cask google-chrome   (or set WR_CHROME=/path/to/chrome)")
+    missing = [t for t in ("pdftotext", "pdfinfo", "pdftoppm") if not shutil.which(t)]
+    add(results, "poppler found (pdftotext, pdfinfo, pdftoppm: PDF text/metadata tests)", "FAIL" if missing else "PASS",
+        ("missing " + ", ".join(missing) + ". Install: brew install poppler   (Homebrew dirs /opt/homebrew/bin and /usr/local/bin are searched automatically)") if missing else "all three on PATH")
 
 
 def report(results, out, header):
@@ -83,6 +116,9 @@ def main(a):
         return 0
     if c == "junit":
         junit(a[1], a[2], int(opt("--min-client-safe", 30)), int(opt("--min-ui", 10)))
+        return 0
+    if c == "deps":
+        deps(a[1])
         return 0
     if c == "report":
         return report(a[1], opt("--out"), opt("--header"))

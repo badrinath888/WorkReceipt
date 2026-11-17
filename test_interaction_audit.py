@@ -83,7 +83,7 @@ class Audit(unittest.TestCase):
         pg.click(".tab[data-go=overview]")
         self.chk(S, "Stats + recent reports", "counts and a recent row render", "vOverview", "/api/state", lambda: (self.assertIn("acme-storefront", pg.inner_text("#screen")), self.assertTrue(pg.locator(".stat").count() >= 3)))
         n = FakeNative(); import workreceipt_app as app; app.NATIVE = n
-        self.chk(S, "Open recent report", "asks host to open newest report by name", "openrecent", "/api/native/open", lambda: (pg.click("#openrecent"), pg.wait_for_timeout(300), self.assertEqual(n.calls[-1][0], "open"), self.assertTrue(n.calls[-1][1].endswith(".html"))))
+        self.chk(S, "Open recent report", "asks host to open newest report by name", "openrecent", "/api/native/open", lambda: ((k := len(n.calls)), pg.click("#openrecent"), _e.settle(pg, n, k + 1), self.assertEqual(n.calls[-1][0], "open"), self.assertTrue(n.calls[-1][1].endswith(".html"))))
         def nav():
             for k in ("projects", "reports", "settings", "overview"):
                 pg.click(f".tab[data-go={k}]"); pg.wait_for_selector(f".tab[data-go={k}][aria-current=page]")
@@ -157,7 +157,7 @@ class Audit(unittest.TestCase):
         self.chk(S, "Preview (opens at top)", "iframe rendered, scroll 0", "makePreview", "/api/render", prev)
         self.chk(S, "Export", "HTML (+PDF if backend) written, registered in history", "doExport", "/api/export", lambda: (pg.click("#export"), pg.wait_for_selector(".xcard.ok:has-text('Exported')", timeout=60000), self.assertTrue(len(self.core.history()) >= 1)))
         n = self.native()
-        self.chk(S, "Open report / Show in Finder (post-export)", "name-only calls to host", "fileAction", "/api/native/open|reveal", lambda: (pg.click(".xcard [data-open][data-kind=html]"), pg.click(".xcard [data-showfile]"), self.assertEqual([c[0] for c in n.calls], ["open", "reveal"])))
+        self.chk(S, "Open report / Show in Finder (post-export)", "name-only calls to host", "fileAction", "/api/native/open|reveal", lambda: (pg.click(".xcard [data-open][data-kind=html]"), pg.click(".xcard [data-showfile]"), _e.settle(pg, n, 2), self.assertEqual([c[0] for c in n.calls], ["open", "reveal"])))
         pg.close()
 
     # ---------------- reports ----------------
@@ -168,8 +168,8 @@ class Audit(unittest.TestCase):
         pg.click(".tab[data-go=reports]"); pg.wait_for_selector("tr:has-text('acme-storefront')")
         self.chk(S, "Search", "filters, empty-match message", "input#rq", "-", lambda: (pg.fill("#rq", "zzz"), self.assertIn("No reports match", pg.inner_text("#screen")), pg.fill("#rq", "acme"), self.assertIn("acme-storefront", pg.inner_text("#screen"))))
         self.chk(S, "Date filters", "future From hides rows; cleared shows", "input#rf/#rt", "-", lambda: (pg.fill("#rf", "2099-01-01"), self.assertIn("No reports match", pg.inner_text("#screen")), pg.fill("#rf", ""), pg.fill("#rt", "2000-01-01"), self.assertIn("No reports match", pg.inner_text("#screen")), pg.fill("#rt", "")))
-        self.chk(S, "Open report", "host called with file name", "data-open", "/api/native/open", lambda: (pg.click("[data-open][data-kind=html]"), pg.wait_for_timeout(200), self.assertEqual(n.calls[-1][0], "open")))
-        self.chk(S, "Show in Finder", "host called with file name", "data-showfile", "/api/native/reveal", lambda: (pg.click("[data-showfile]"), pg.wait_for_timeout(200), self.assertEqual(n.calls[-1][0], "reveal")))
+        self.chk(S, "Open report", "host called with file name", "data-open", "/api/native/open", lambda: ((k := len(n.calls)), pg.click("[data-open][data-kind=html]"), _e.settle(pg, n, k + 1), self.assertEqual(n.calls[-1][0], "open")))
+        self.chk(S, "Show in Finder", "host called with file name", "data-showfile", "/api/native/reveal", lambda: ((k := len(n.calls)), pg.click("[data-showfile]"), _e.settle(pg, n, k + 1), self.assertEqual(n.calls[-1][0], "reveal")))
         n.res = {"ok": False, "error": "That report file no longer exists. It may have been moved or deleted"}
         self.chk(S, "Missing file handling", "error toast, no crash", "fileAction", "/api/native/open", lambda: (pg.click("[data-open]"), pg.wait_for_selector("#toast.on:has-text('no longer exists')")))
         self.chk(S, "Delete cancel", "report kept", "closeDlg", "-", lambda: (pg.click("[data-delrep]"), pg.click("[data-close]"), self.assertEqual(pg.locator("[data-delrep]").count(), 1)))

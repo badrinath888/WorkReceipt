@@ -55,6 +55,13 @@ def run():
             need(core.PDF_BACKEND.__module__.endswith("pdf_mac") and core.PDF_INSPECTOR.__module__.endswith("pdf_mac"), "backends are not the pdf_mac ones"))[-1] or "same wiring as desktop/main.py")
     else:
         record("native backends installed (WKWebView PDF writer + PDFKit reader)", "BLOCKED", "not macOS (selftest uses Chrome/poppler instead)" if wrv.SELFTEST else "requires macOS", required=not wrv.SELFTEST)
+    def meta_probe():
+        """Which information-dictionary fields does THIS engine write? Synthetic page only; allowed values are shown, others only by length."""
+        pdf = os.path.join(ROOT, "probe.pdf")
+        render_native("<html><head><title>Work report for Initech</title></head><body><p>Probe page</p></body></html>", pdf)
+        info = pk.inspect(pdf)
+        return f"{info['backend']}: " + cs.describe_pdf_metadata(info["meta"], "Work report for Initech", (), []) + f"; annotations={info['annotations']}"
+    check("native: PDF information fields written by this engine (diagnostic)", meta_probe, required=False)
     ws = wrv.make_workspace(ROOT)
     ctx = wrv.Ctx(ws)
     check("synthetic workspace created; app data, Claude folder and reports folder are inside the sandbox", lambda: wrv.assert_isolated(ROOT))

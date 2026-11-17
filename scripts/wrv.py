@@ -148,6 +148,17 @@ class Api:
             return code, {"_raw": raw.decode("utf-8", "replace")[:200]}
 
 
+def review_via_api(api, ctx):
+    """Privacy-Center review of every high-severity finding, using the finding ids of the app UNDER TEST. Ids are salted per process
+    (app_core._SALT) so an approval computed in the harness process can never apply to a separately launched app; the live apps
+    therefore get their ids from their own /api/preview, exactly as the UI does."""
+    c, r = api.post("/api/preview", dict(ctx.o))
+    need(c == 200 and isinstance(r.get("findings"), list), f"the app's preview refused (HTTP {c})")
+    ctx.ap = {d["id"]: "unsure" for f in r["findings"] if f.get("severity") == "high" for d in f.get("detections", []) if not d.get("suppressed")}
+    need(ctx.ap, "the synthetic workspace produced no high-severity findings to review (test setup problem)")
+    return len(ctx.ap)
+
+
 def body(ctx, draft, **extra):
     return dict(ctx.o, draft=draft, approved=extra.pop("approved", ctx.ap), **extra)
 
@@ -180,12 +191,13 @@ def workflow(api, ctx, label, inspect_pdf, producer_re=None):
     art = {}
     d = base_draft(ctx)
     L = label + ": "
-    start_files = ctx.files()
 
     def happy():
+        n = review_via_api(api, ctx)
         c, pv = api.post("/api/client/preview", body(ctx, d)); need(c == 200 and pv.get("ok") and pv.get("html"), "preview was refused")
+        need(pv.get("pending_findings") == 0, f"preview still lists {pv.get('pending_findings')} unreviewed findings after the review")
         c, ap = api.post("/api/client/approve", body(ctx, d, confirm={"privacy_review": True, "content_hash": pv["content_hash"]}))
-        need(c == 200 and ap.get("token"), "approval was refused")
+        need(c == 200 and ap.get("token"), f"approval was refused: HTTP {c} reason={ap.get('reason')} failed={ap.get('failed')} missing={len(ap.get('missing') or [])}")
         c, ex = api.post("/api/client/export", body(ctx, d, token=ap["token"], pdf=True))
         need(c == 200 and ex.get("ok"), f"export refused: {ex.get('reason')} {ex.get('failed')}")
         need(not ex.get("pdf_failed"), f"PDF was not produced: {ex.get('pdf_error')}")
@@ -195,7 +207,7 @@ def workflow(api, ctx, label, inspect_pdf, producer_re=None):
         need(all(os.path.basename(ex[k]).startswith("client-report-Billing-Revamp-") for k in ("html_path", "pdf_path")), "unexpected file names")
         art.update(pv=pv, ap=ap, ex=ex, html=open(ex["html_path"], encoding="utf-8").read(), pdf=ex["pdf_path"])
         need(art["html"] == pv["html"], "the exported HTML is not byte-identical to the preview")
-        return "HTML + PDF written; export HTML identical to the preview"
+        return f"{n} findings reviewed through the app's own API; HTML + PDF written; export HTML identical to the preview"
     if not check(L + "approve and export HTML + PDF", happy):
         return art
 
