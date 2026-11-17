@@ -51,3 +51,7 @@ Blocked on Linux: PDFKit `extract_facts`, WKWebView PDF of the client report, na
 3. Edit an item after approval: Export disables and approval clears.
 4. If export says it could not verify the PDF, the Mac inspector failed: send the reason code shown (no content).
 5. Developer tab: export is marked PRIVATE.
+
+
+## Round 7: automated validation (v0.6.0+)
+Run `scripts/validate_macos.sh` (see MACOS_AUTOMATED_VALIDATION.md). It replaces the manual Round 6 steps 1-4 for export, approval and PDF checks; Round 6 step 5 (developer export marked PRIVATE) is covered too. Still manual: folder picker, Open/Show in Finder, menu bar, visual layout.

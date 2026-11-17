@@ -70,3 +70,9 @@ NOT tested: any macOS run, real pywebview/WKWebView window (bridge only stubbed)
 ## v0.6.0 — Client-Safe Mode
 - See docs/CLIENT_SAFE_MODE.md. New `client_safe.py`, `/api/client/*`, Report Studio client flow (default), developer reports marked PRIVATE, history records carry `mode`.
 - 295 tests pass on Linux (229 baseline + 66 new). NOT verified on macOS (MAC_VALIDATION.md Round 6).
+
+
+## Automated macOS validation
+- `scripts/validate_macos.sh`: one command, sandboxed, PASS/FAIL report with exit codes. See docs/MACOS_AUTOMATED_VALIDATION.md for stages and what ran where.
+- Linux `--selftest` passes (304 tests + harness logic; labelled not-macOS evidence). macOS-only stages (WKWebView PDF, PDFKit, live app launch) are written but unexecuted until run on a Mac.
+- Fixed: Settings text typed while a folder save was in flight was wiped by the re-render (surfaced as a flaky audit test).
