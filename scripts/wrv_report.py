@@ -16,7 +16,17 @@ def add(path, name, status, detail="", required=True):
         f.write(json.dumps({"name": name, "status": status, "detail": detail[:500], "required": required}) + "\n")
 
 
-CRITICAL = ("test_client_safe", "test_client_safe_ui", "test_pdf_quality", "test_validation_scripts", "test_e2e_desktop", "test_interaction_audit")
+CRITICAL = ("test_client_safe", "test_client_safe_ui", "test_pdf_quality", "test_validation_scripts", "test_e2e_desktop", "test_interaction_audit",
+            "test_pdf_metadata_injection", "test_buildinfo")
+# Release gate: these PDF security tests must have RUN AND PASSED (a skip is a failure). Several need poppler (`brew install poppler`) and Chrome.
+REQUIRED_PDF_SECURITY = (
+    "test_client_safe.PdfArtifact.test_metadata_is_checked", "test_client_safe.PdfArtifact.test_hidden_text_is_detected",
+    "test_client_safe.PdfArtifact.test_links_and_annotations_are_detected", "test_client_safe.EndToEnd.test_pdf_export_is_checked_and_clean",
+    "test_pdf_metadata_injection.InjectedPdfMetadata.test_private_pdf_title_is_rejected_by_both_checkers_with_every_extractor",
+    "test_pdf_metadata_injection.InjectedPdfMetadata.test_title_the_extractor_dropped_is_still_caught_from_the_file_itself",
+    "test_pdf_metadata_injection.InjectedPdfMetadata.test_other_information_fields_are_rejected",
+    "test_pdf_metadata_injection.ExportWithoutPoppler.test_client_export_refuses_a_pdf_whose_title_was_changed_after_printing",
+)
 
 
 def _short(c):
@@ -30,6 +40,7 @@ def junit(path, results, min_cs, min_ui):
     n = {"passed": 0, "failed": 0, "skipped": 0}
     by, skips, failed_by, crit_skips = {}, {}, {}, {}
     all_failed = []
+    outcome = {}
     for c in root.iter("testcase"):
         cls = c.get("classname", "").split(".")[0]
         if c.find("failure") is not None or c.find("error") is not None:
@@ -44,6 +55,7 @@ def junit(path, results, min_cs, min_ui):
                 crit_skips[msg] = crit_skips.get(msg, 0) + 1
         else:
             k = "passed"
+        outcome[c.get("classname", "") + "." + c.get("name", "")] = k
         n[k] += 1
         by.setdefault(cls, {"passed": 0, "failed": 0, "skipped": 0})[k] += 1
     if all_failed:                                               # full list next to the results, so a failure can be diagnosed without re-running
@@ -58,10 +70,22 @@ def junit(path, results, min_cs, min_ui):
         f"{cs} passed (need >= {min_cs})" + (f"; FAILED: {' | '.join(csf[:5])}" if csf else ""))
     add(results, "Client-Safe real-click browser tests actually ran and passed", "PASS" if ui >= min_ui and not uif else "FAIL",
         f"{ui} passed (need >= {min_ui})" + (f"; FAILED: {' | '.join(uif[:5])}" if uif else "") + ("" if ui >= min_ui else "; install Google Chrome or set WR_CHROME=/path/to/chrome"))
+    st, detail = pdf_gate(outcome)
+    add(results, "required PDF security tests ran and passed (release gate)", st, detail)
     cs_total = sum(crit_skips.values())
     add(results, "no critical tests were skipped", "PASS" if not cs_total else "FAIL",
         "none skipped in the Client-Safe, PDF-quality, browser and script suites" if not cs_total else
         f"{cs_total} critical test(s) skipped, so coverage is incomplete: " + "; ".join(f"{v}x {k}" for k, v in crit_skips.items()) + ". Run: brew install poppler; brew install --cask google-chrome")
+
+
+def pdf_gate(outcome):
+    """-> (status, detail) for the required PDF security tests."""
+    bad = {t: outcome.get(t, "missing") for t in REQUIRED_PDF_SECURITY if outcome.get(t) != "passed"}
+    if not bad:
+        return "PASS", f"all {len(REQUIRED_PDF_SECURITY)} required PDF security tests ran and passed"
+    why = "; ".join(f"{t.split('.', 1)[1]}: {v}" for t, v in list(bad.items())[:4])
+    return "FAIL", (f"{len(bad)} of {len(REQUIRED_PDF_SECURITY)} required PDF security tests did not pass ({why}). Release approval needs them: "
+                    "brew install poppler; brew install --cask google-chrome; then re-run scripts/validate_macos.sh")
 
 
 def deps(results):

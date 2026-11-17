@@ -5,6 +5,7 @@ import json, os, re, signal, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import wrv
 from wrv import check, need, record, Failure
+import buildinfo
 
 ROOT = os.environ["WRV_ROOT"]
 os.environ["WORKRECEIPT_HOME"] = os.path.join(ROOT, "home")
@@ -80,11 +81,13 @@ def run_app(label, cmd, ctx, required):
         def st():
             c, raw = api.get("/api/state"); s = json.loads(raw)
             need(s["version"] == core.VERSION, f"app reports version {s['version']}, expected {core.VERSION}")
+            same, why = buildinfo.compare(s.get("build"), buildinfo.source_fingerprint(wrv.REPO))
+            need(same, "the RUNNING app is not built from this checkout's source: " + why + ". " + buildinfo.STALE_HELP)
             need(os.path.realpath(s["home"]) == os.path.realpath(ctx.home), "the app is NOT using the sandbox data folder")
             need(os.path.realpath(s["settings"]["out_dir"]).startswith(os.path.realpath(ROOT) + os.sep), "the app's reports folder is outside the sandbox")
             c, r = api.post("/api/native/status", {})
             need(r.get("available") is True and r.get("shown") is True, f"native bridge status: {r}")
-            return f"v{s['version']}, sandbox data folder, native bridge available"
+            return f"v{s['version']}, {why}; sandbox data folder, native bridge available"
         check(L + "app uses the sandbox and reports native status", st, required)
 
         def csp():
@@ -131,7 +134,12 @@ def main():
     check("live app: workspace and reports folder are inside the sandbox", lambda: wrv.assert_isolated(ROOT))
     run_app("source app", [sys.executable, os.path.join(wrv.REPO, "desktop", "main.py")], ctx, True)
     if os.path.isfile(PACKAGED) and os.access(PACKAGED, os.X_OK):
-        run_app("packaged app", [PACKAGED], ctx, True)
+        def packaged_is_current():
+            ok, msg, _ = buildinfo.check_app(PACKAGED, wrv.REPO, timeout=20)
+            need(ok, "STALE packaged app, not a release candidate: " + msg + ". " + buildinfo.STALE_HELP)
+            return msg
+        if check("packaged app: built from this checkout's current source (not a stale build)", packaged_is_current, True):
+            run_app("packaged app", [PACKAGED], ctx, True)               # a stale app is not launched: its refusals would only mislead
     else:
         record("packaged app: launch and PDF export", "SKIP", "dist/WorkReceipt.app not built here (run desktop/build_macos.sh, or set WR_APP_BIN)", required=False)
     return 0

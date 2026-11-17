@@ -12,3 +12,4 @@ __pycache__/
 *.iconset/
 validation-results/
 .validate-venv/
+_build_info.py

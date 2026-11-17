@@ -11,6 +11,21 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SELFTEST = os.environ.get("WRV_SELFTEST") == "1"
 FORBID = (b"/URI", b"/JavaScript", b"/JS", b"/Launch", b"/EmbeddedFile", b"/FileAttachment", b"/OpenAction", b"/GoToR", b"/SubmitForm", b"/RichMedia", b"/XFA", b"/AcroForm", b"/Names", b"/Annots")
 LETTER = (612.0, 792.0)
+FOOTER_TOKEN = re.compile(r"^(?:\d+|workreceipt|report|work|page|of)+$")      # footer text some extractors glue together ("1workreceipt"); written separately from the product on purpose
+
+
+def inject_info(src, dst, fields):
+    """Test tool: copy `src` to `dst` with extra PDF information-dictionary fields (e.g. {"Title": "..."}). Producer/Creator of the original are
+    kept (pypdf would otherwise stamp its own), so the only difference is what the caller injects. Needs pypdf. Returns the fields as read back."""
+    import pypdf
+    rd = pypdf.PdfReader(src)
+    keep = {k: v for k, v in (rd.metadata or {}).items() if k in ("/Producer", "/Creator")}
+    w = pypdf.PdfWriter(clone_from=src)
+    w.add_metadata({**keep, **{"/" + k.lstrip("/"): v for k, v in fields.items()}})
+    with open(dst, "wb") as f:
+        w.write(f)
+    back = pypdf.PdfReader(dst).metadata or {}
+    return {k.lstrip("/"): str(v) for k, v in back.items()}
 
 
 def squeeze(s):
@@ -147,7 +162,7 @@ def verify(path, html, expect=(), canaries=None, title=None):
             break
     vis = html_text(html)
     sq_html = squeeze(vis + " " + (title or ""))
-    extra = [t for t in tokens(info["text"]) if t not in sq_html and not t.isdigit() and t not in ("workreceipt", "work", "report", "page", "of")]
+    extra = [t for t in tokens(info["text"]) if t not in sq_html and not FOOTER_TOKEN.match(t)]
     if extra:
         bad.append("text_not_in_html(%d)" % len(extra))
     html_tokens = tokens(vis)

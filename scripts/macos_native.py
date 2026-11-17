@@ -24,6 +24,13 @@ def render_native(html, out):
     os.replace(got, out)
 
 
+def _raw_title(path):
+    """The /Title in the file's own information dictionary (read without PDFKit), '' if none."""
+    import client_safe as cs, re
+    data = open(path, "rb").read()
+    return cs.raw_info_fields(re.sub(rb"stream\r?\n.*?\r?\nendstream", b"", data, flags=re.S)).get("Title", "")
+
+
 def inject(html, frag):
     """The report HTML is minified and has no closing body tag, so append the fragment (browsers place it in the body)."""
     return html.replace("</body>", frag + "</body>") if "</body>" in html else html + frag
@@ -58,7 +65,7 @@ def run():
     def meta_probe():
         """Which information-dictionary fields does THIS engine write? Synthetic page only; allowed values are shown, others only by length."""
         pdf = os.path.join(ROOT, "probe.pdf")
-        render_native("<html><head><title>Work report for Initech</title></head><body><p>Probe page</p></body></html>", pdf)
+        render_native("<html><head><meta charset=utf-8><title>Work report for Initech</title></head><body><p>Synthetic probe page for the metadata diagnostic, with enough text to be selectable.</p></body></html>", pdf)
         info = pk.inspect(pdf)
         return f"{info['backend']}: " + cs.describe_pdf_metadata(info["meta"], "Work report for Initech", (), []) + f"; annotations={info['annotations']}"
     check("native: PDF information fields written by this engine (diagnostic)", meta_probe, required=False)
@@ -121,11 +128,39 @@ def run():
         return f"app validator: {','.join(app_fails)}; independent: {','.join(ind)[:90]}"
     check("native: hidden text in a real WKWebView PDF is detected", hidden)
 
+    def title_propagation():
+        """Diagnostic only: does this engine copy the HTML <title> into the PDF at all? (The first Mac run assumed it did; the product validator then saw no private title.)"""
+        app_fails, ind, info = tamper("meta-html", lambda h: __import__("re").sub(r"<title>.*?</title>", "<title>oracle-fin-01 internal</title>", h, flags=16), None)
+        written = _raw_title(os.path.join(tdir, "meta-html.pdf"))
+        read = info["meta"].get("Title", "")
+        return (f"HTML <title> written into the PDF: {'yes' if written else 'NO'}; read by {info['backend']}: {'yes' if read else 'no'}; "
+                f"product validator: {','.join(app_fails) or 'clean'}; independent: {','.join(ind)[:80] or 'clean'}")
+    check("native: does WKWebView copy the HTML <title> into the PDF (diagnostic)", title_propagation, required=False)
+
     def meta():
-        app_fails, ind, info = tamper("meta", lambda h: __import__("re").sub(r"<title>.*?</title>", "<title>oracle-fin-01 internal</title>", h, flags=16), None)
-        need("metadata" in app_fails or "pdf_text" in app_fails, f"the product validator accepted a private PDF title (got {app_fails})")
-        need(any(c.startswith("metadata") or c == "canary_in_metadata" for c in ind), f"the independent checker accepted a private PDF title (got {ind})")
-        return "private string in the PDF title blocked by both checks"
+        """Inject private metadata INTO the real WKWebView PDF (the engine's own handling of <title> is irrelevant), then follow it through every stage:
+        written to the file -> read by PDFKit -> product validator -> independent checker. Failure messages say which stage lost it (booleans only)."""
+        import pdfkit_check
+        base = os.path.join(tdir, "meta-base.pdf")
+        render_native(real_html, base)
+        facts_ok = inspect_native(base)
+        need(cs.validate_pdf(base, report, real_html, facts_ok, terms) == [], "the untouched WKWebView PDF was refused by the product validator; cannot judge metadata checks")
+        summary = []
+        for field, value, want_ind in (("Title", "oracle-fin-01 internal", ("canary_in_metadata", "metadata_title")), ("Title", "Quarterly payroll notes", ("metadata_title",)),
+                                       ("Author", "Zed Author", ("metadata_extra",)), ("Subject", "internal", ("metadata_extra",)), ("Keywords", "billing, payroll", ("metadata_extra",))):
+            out = os.path.join(tdir, f"meta-{field.lower()}.pdf")
+            back = pdfkit_check.inject_info(base, out, {field: value})
+            written = back.get(field) == value
+            need(written, f"test bug: the injected {field} did not land in the PDF file")
+            facts = inspect_native(out)
+            read = bool((facts or {}).get("meta", {}).get(field))
+            app_fails = cs.validate_pdf(out, report, real_html, facts, terms)
+            ind, _info = pk.verify(out, real_html, title="Billing Revamp")
+            stages = f"{field}: written=yes, read_by_extractor={'yes' if read else 'NO'}, product={','.join(app_fails) or 'ACCEPTED'}, independent={','.join(ind)[:60] or 'ACCEPTED'}"
+            need("metadata" in app_fails and "metadata_" + field.lower() in app_fails, f"the product validator accepted a private PDF {field.lower()} ({stages})")
+            need(any(c in ind for c in want_ind), f"the independent checker accepted a private PDF {field.lower()} ({stages})")
+            summary.append(f"{field}: extractor read={'yes' if read else 'no'}")
+        return "private Title/Author/Subject/Keywords injected into a real WKWebView PDF were refused by both checks (" + "; ".join(summary) + ")"
     check("native: private text in PDF metadata is detected", meta)
 
     def link():

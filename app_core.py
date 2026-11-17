@@ -7,7 +7,15 @@ from datetime import datetime, timedelta
 import client_safe as cs
 import workreceipt as w
 
-VERSION = "0.6.0"
+VERSION = "0.6.1"
+
+
+def build_info():
+    """Which source this process was built from (see buildinfo.py). Reported in /api/state and by `desktop/main.py --build-info`."""
+    import buildinfo
+    return buildinfo.current(VERSION)
+
+
 DISPOSITIONS = ("credential", "not_credential", "unsure")     # what the human decided; every choice keeps the value masked in the report
 MAX_ITEMISE = 400_000          # longer texts are reviewed as one group (no per-detection location or reveal)
 REVEAL_MAX = 2000

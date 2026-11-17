@@ -457,8 +457,12 @@ function obHTML() {
 }
 function showOb() { const r = $("#obroot"); r.innerHTML = obHTML(); syncPickers(); r.querySelector("button.dark,button.teal,button")?.focus(); }
 async function finishOb(go_) {
-  S.ob = null; showOb();
+  if (S.ob?.finishing) return;                         // a double click must not start a second save
+  if (S.ob) S.ob.finishing = true;
+  // Persist FIRST and close the dialog after: closing before the save landed left a window (slow disk, slow Mac) in which "setup finished" was
+  // visible but not stored, so a quit right then showed onboarding again, and tests that read the settings right after the close raced the save.
   try { S.data.settings = await api("/api/settings", { onboarded: true }); } catch (e) { toast(e.message); }
+  S.ob = null; showOb();
   go(go_ || "overview");
 }
 

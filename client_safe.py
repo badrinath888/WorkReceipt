@@ -503,6 +503,9 @@ _PRODUCER_OK = re.compile(r"(?i)^(?:skia/pdf m?\d+|chrome(?:ium)?(?:/[\d.]+)?|qu
                           r"mozilla/5\.0 \([\w .;:,_-]{1,60}\) applewebkit/[\d.]+ \(khtml, like gecko\)[\w ./-]{0,60})$")
 _PDF_FORBID = (b"/URI", b"/JavaScript", b"/JS", b"/Launch", b"/EmbeddedFile", b"/FileAttachment", b"/OpenAction", b"/GoToR", b"/SubmitForm", b"/RichMedia", b"/XFA", b"/AcroForm", b"/Names")
 PDF_FOOTER_WORDS = {"workreceipt", "work", "report", "page", "of"}
+# Some extractors (pypdf) join the footer's separate text runs without a space ("1" + "WorkReceipt" -> "1workreceipt"). A token made ONLY of
+# page numbers and footer words is still footer text; anything else in it (or any other token) remains "extra text".
+_FOOTER_TOKEN = re.compile(r"^(?:\d+|" + "|".join(sorted(PDF_FOOTER_WORDS, key=len, reverse=True)) + r")+$")
 
 
 def _mentions(text, private_terms, local_ids):
@@ -531,6 +534,69 @@ def pdf_metadata_problems(meta, title, private_terms=(), local_ids=()):
             out[k] = "must_be_empty"
         if val and _mentions(val, private_terms, local_ids):
             out[k] = "mentions_private_or_local_name"
+    return out
+
+
+_INFO_REF = re.compile(rb"/Info\s+(\d+)\s+(\d+)\s+R")
+_INFO_PAIR = re.compile(rb"/([A-Za-z][A-Za-z0-9_.+-]*)\s*(\((?:\\.|[^\\()]|\((?:\\.|[^\\()])*\))*\)|<[0-9A-Fa-f\s]*>)", re.S)
+_ESC = {ord("n"): 10, ord("r"): 13, ord("t"): 9, ord("b"): 8, ord("f"): 12, ord("("): 40, ord(")"): 41, ord("\\"): 92}
+
+
+def _pdf_text_string(tok):
+    """Decode a PDF literal (...) or hex <...> string the way a viewer shows it (UTF-16 with BOM, UTF-8 with BOM, else PDFDocEncoding ~ latin-1)."""
+    if tok[:1] == b"<":
+        h = re.sub(rb"\s", b"", tok[1:-1])
+        raw = bytes.fromhex((h + (b"0" if len(h) % 2 else b"")).decode("ascii"))
+    else:
+        body, out, i = tok[1:-1], bytearray(), 0
+        while i < len(body):
+            c = body[i]
+            if c != 92:
+                out.append(c); i += 1; continue
+            i += 1
+            if i >= len(body):
+                break
+            c = body[i]
+            if 48 <= c <= 55:
+                j = i
+                while j < len(body) and j < i + 3 and 48 <= body[j] <= 55:
+                    j += 1
+                out.append(int(body[i:j], 8) & 255); i = j; continue
+            if c in _ESC:
+                out.append(_ESC[c])
+            elif c not in (10, 13):                       # backslash-newline is a line continuation; any other escape is the character itself
+                out.append(c)
+            i += 1
+        raw = bytes(out)
+    if raw[:2] == b"\xfe\xff":
+        return raw[2:].decode("utf-16-be", "replace")
+    if raw[:2] == b"\xff\xfe":
+        return raw[2:].decode("utf-16-le", "replace")
+    if raw[:3] == b"\xef\xbb\xbf":
+        return raw[3:].decode("utf-8", "replace")
+    return raw.decode("latin-1")
+
+
+def raw_info_fields(skeleton):
+    """Fields of the PDF information dictionary read straight from the file bytes (`skeleton` = the file with stream bodies removed), NOT through
+    whatever extractor produced `facts`. Defence in depth: a title or other field that the extractor drops, renames or filters out is still
+    seen here. Returns {} when the dictionary is not a plain object (e.g. inside an object stream); the extractor's view then stands alone."""
+    refs = _INFO_REF.findall(skeleton)
+    if not refs:
+        return {}
+    n, g = refs[-1]
+    heads = list(re.finditer(rb"(?<![0-9])" + n + rb"\s+" + g + rb"\s+obj\b", skeleton))
+    if not heads:
+        return {}
+    start = heads[-1].end()
+    end = skeleton.find(b"endobj", start)
+    region = skeleton[start:end if end >= 0 else len(skeleton)]
+    out = {}
+    for m in _INFO_PAIR.finditer(region):
+        try:
+            out[m.group(1).decode("ascii")] = _pdf_text_string(m.group(2))
+        except (ValueError, UnicodeError):
+            out[m.group(1).decode("ascii")] = "\ufffd"        # undecodable value: present and not empty, so it is refused
     return out
 
 
@@ -565,7 +631,10 @@ def validate_pdf(path, r, html_text, facts, private_terms=(), local_ids=None):
     if facts.get("annotations") or facts.get("attachments"):
         bad.add("annotation")
     meta = {str(k).lstrip("/"): str(v or "") for k, v in (facts.get("meta") or {}).items()}
-    for field, why in pdf_metadata_problems(meta, title_of(r), private_terms, lids).items():
+    probs = pdf_metadata_problems(meta, title_of(r), private_terms, lids)
+    for field, why in pdf_metadata_problems(raw_info_fields(skeleton), title_of(r), private_terms, lids).items():      # second, extractor-independent read
+        probs.setdefault(field, why)
+    for field, why in probs.items():
         bad.add("metadata")
         bad.add("metadata_" + field.lower())                                 # field NAME only (never the value), so a refusal can be diagnosed
     text = facts.get("text")
@@ -576,7 +645,7 @@ def validate_pdf(path, r, html_text, facts, private_terms=(), local_ids=None):
     sc = _Scan()
     sc.feed(html_text)
     vis = "".join(_squeeze(x) for x in sc.text + [sc.title])
-    extra = [t for t in _tokens(text) if t not in vis and t not in PDF_FOOTER_WORDS and not t.isdigit()]
+    extra = [t for t in _tokens(text) if t not in vis and not _FOOTER_TOKEN.match(t)]
     if extra:
         bad.add("pdf_text")
     for line in text.splitlines():

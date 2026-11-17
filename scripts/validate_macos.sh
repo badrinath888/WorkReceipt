@@ -1,15 +1,16 @@
 #!/bin/bash
-# One-command macOS validation for WorkReceipt Client-Safe Mode.   Usage:  scripts/validate_macos.sh [--keep] [--quick] [--selftest]
+# One-command macOS validation for WorkReceipt Client-Safe Mode.   Usage:  scripts/validate_macos.sh [--keep] [--quick] [--selftest] [--rebuild]
 #   --keep      keep the temp sandbox (synthetic reports, logs) even when everything passes
 #   --quick     skip the regression suite (the run is then reported INCOMPLETE, never PASS)
 #   --selftest  Linux dry run of the validation LOGIC using Chrome/poppler; labelled as NOT macOS evidence
+#   --rebuild   first rebuild dist/WorkReceipt.app from this checkout (desktop/build_macos.sh), so a stale packaged app can never be validated
 # Everything runs against a synthetic workspace in a temp sandbox. Your real projects, ~/.claude, app data and reports are never read or
 # written; a before/after fingerprint of the real app-data and reports folders proves it. Needs network once, for pip.
 # Exit codes: 0 PASS, 1 a required check failed, 2 incomplete (a required check could not run), 64 usage/setup error.
 set -u -o pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KEEP=0; QUICK=0; SELF=0
-for a in "$@"; do case "$a" in --keep) KEEP=1;; --quick) QUICK=1;; --selftest) SELF=1;; -h|--help) sed -n 2,9p "$0"; exit 0;; *) echo "unknown option: $a" >&2; exit 64;; esac; done
+KEEP=0; QUICK=0; SELF=0; REBUILD=0
+for a in "$@"; do case "$a" in --keep) KEEP=1;; --quick) QUICK=1;; --selftest) SELF=1;; --rebuild) REBUILD=1;; -h|--help) sed -n 2,10p "$0"; exit 0;; *) echo "unknown option: $a" >&2; exit 64;; esac; done
 OS="$(uname -s)"
 if [ "$OS" != "Darwin" ] && [ "$SELF" != 1 ]; then
   echo "note: this is not macOS. The native stages will be reported BLOCKED (exit 2). Use --selftest for a labelled Linux dry run." >&2
@@ -52,6 +53,19 @@ if [ -z "$CHROME_BIN" ]; then for c in "/Applications/Google Chrome.app/Contents
 [ -n "$CHROME_BIN" ] && export WR_CHROME="$CHROME_BIN"
 
 R deps "$WRV_RESULTS"
+MISSING=""; for t in pdftotext pdfinfo pdftoppm; do command -v "$t" >/dev/null 2>&1 || MISSING="$MISSING $t"; done
+if [ -n "$MISSING" ] && [ "$SELF" != 1 ]; then
+  echo "WARNING: poppler is missing (${MISSING# }). The required PDF security tests will be SKIPPED, so this run cannot PASS and the build cannot be approved." >&2
+  echo "         Fix:  brew install poppler   (and, if Chrome is missing, brew install --cask google-chrome)" >&2
+fi
+if [ "$REBUILD" = 1 ]; then
+  if [ "$OS" != Darwin ]; then R add "clean rebuild of dist/WorkReceipt.app from this checkout" BLOCKED "requires macOS"
+  else
+    echo "rebuilding dist/WorkReceipt.app from this checkout (a few minutes)..."
+    if "$REPO/desktop/build_macos.sh" >"$ROOT/logs/build.log" 2>&1; then R add "clean rebuild of dist/WorkReceipt.app from this checkout" PASS "the build script verified the app reports this source"
+    else R add "clean rebuild of dist/WorkReceipt.app from this checkout" FAIL "build failed; see $ROOT/logs/build.log"; fi
+  fi
+fi
 
 # ---- 3. regression + security suite (existing tests, unmodified assertions)
 if [ "$QUICK" = 1 ]; then
@@ -88,10 +102,13 @@ if [ "$BEFORE" = "$AFTER" ]; then R add "your real app data and reports folders 
 else R add "your real app data and reports folders were not modified" FAIL "fingerprint changed (close the real app and re-run; if it still changes, a test is writing outside the sandbox)"; fi
 
 # ---- 7. report
+PKG="not built"; APPBIN="${WR_APP_BIN:-$REPO/dist/WorkReceipt.app/Contents/MacOS/WorkReceipt}"
+if [ "$OS" = Darwin ] && [ -x "$APPBIN" ]; then PKG="$("$PY" "$REPO/buildinfo.py" check-app "$APPBIN" 2>&1 | head -n 1 | sed 's/:.*//')"; fi
 COMMIT="$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo '?')"; DIRTY=""; git -C "$REPO" diff --quiet 2>/dev/null || DIRTY="+uncommitted changes"
+FP="$("$PY" "$REPO/buildinfo.py" show 2>/dev/null | "$PY" -c "import json,sys; print(json.load(sys.stdin)['fingerprint'][:12])" 2>/dev/null || echo '?')"
 VER="$("$PY" -c "import sys; sys.path.insert(0, '$REPO'); import app_core; print(app_core.VERSION)" 2>/dev/null || echo '?')"
 MAC="$( [ "$OS" = Darwin ] && echo "macOS $(sw_vers -productVersion) $(uname -m)" || echo "$OS$([ "$SELF" = 1 ] && echo ' (selftest)')")"
-R report "$WRV_RESULTS" --out "$REPORT" --header "WorkReceipt v$VER  commit $COMMIT$DIRTY  $MAC  $(date '+%Y-%m-%d %H:%M')"
+R report "$WRV_RESULTS" --out "$REPORT" --header "WorkReceipt v$VER  commit $COMMIT$DIRTY  source ${FP:-?}  packaged app: $PKG  $MAC  $(date '+%Y-%m-%d %H:%M')"
 CODE=$?
 if [ "$CODE" = 0 ] && [ "$KEEP" = 0 ]; then case "$ROOT" in */wr-validate.*) rm -rf "$ROOT";; esac; else echo "sandbox kept for inspection (synthetic data only): $ROOT"; fi
 exit $CODE

@@ -10,6 +10,9 @@ except ImportError:
     sync_playwright = None
 
 
+SELECT_ALL = "Meta+A" if sys.platform == "darwin" else "Control+A"      # on macOS Ctrl+A moves the caret to the line start; only Cmd+A selects everything
+
+
 def settle(pg, native, k, ms=8000):
     """A click returns before the page's fetch to the (stub) native host has arrived; wait until the host has seen k calls instead of racing it."""
     waited = 0
@@ -93,7 +96,9 @@ class E2E(unittest.TestCase):
         pg.click("tr[data-pick]:has-text('acme-storefront')"); pg.click("#load")
         pg.wait_for_selector(".callout.ok:has-text('Loaded')", timeout=60000)
         pg.click(".tab[data-go=studio]"); pg.click("#mode-private"); pg.wait_for_selector("[data-req]")
-        el = pg.locator("[data-req]").first; el.click(); el.press("Control+A"); el.type("Edited by user")
+        el = pg.locator("[data-req]").first; original = el.inner_text(); el.click(); el.press(SELECT_ALL)
+        self.assertEqual(pg.evaluate("getSelection().toString().trim()"), original.strip(), "the select-all key did not select the whole item (keyboard modifier is platform specific)")
+        el.type("Edited by user")
         pg.click(".tab[data-go=overview]"); pg.click(".tab[data-go=reports]"); pg.click(".tab[data-go=studio]"); pg.click("#mode-private")
         self.assertEqual(pg.locator("[data-req]").first.inner_text(), "Edited by user")        # edits survive navigation
         pg.click("#preview"); pg.wait_for_selector("iframe.frame")
@@ -153,6 +158,21 @@ class E2E(unittest.TestCase):
     def saved(self):
         with open(os.path.join(self.core._home(), "settings.json")) as f:
             return json.load(f)
+
+    def test_onboarding_finish_is_saved_before_the_dialog_closes(self):
+        """Regression (macOS run: 'Onboarding/Finish setup: False is not true'): the dialog used to close first and save afterwards, so anything that
+        looked at the stored settings the moment the dialog was gone saw onboarded=false. A slow save makes the old order fail every time."""
+        import time
+        self.core.save_settings({"onboarded": False}); self.native(); real = self.core.save_settings
+
+        def slow(data):
+            time.sleep(0.7); return real(data)
+        self.core.save_settings = slow; self.addCleanup(setattr, self.core, "save_settings", real)
+        pg = self.page(); pg.goto(self.url + "?shell=desktop"); pg.wait_for_selector("#obnext"); pg.click("#obnext"); pg.click("#obnext")
+        pg.click("#obskip")
+        pg.wait_for_selector(".ob", state="detached")
+        self.assertTrue(self.saved()["onboarded"], "the dialog closed before the setting was stored")
+        pg.close()
 
     def test_6_picker_waits_for_host_then_populates_and_persists(self):
         d1, d2 = os.path.join(self.root, "claude-picked"), os.path.join(self.root, "reports-picked"); os.makedirs(d1); os.makedirs(d2)

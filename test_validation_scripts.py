@@ -134,6 +134,42 @@ class ReportAccounting(unittest.TestCase):
         rows, d = self.run_junit([("test_client_safe", "a", "")])
         self.assertEqual(rows["Client-Safe backend adversarial tests actually ran and passed"]["status"], "FAIL")
 
+    def gate(self, cases):
+        """cases: [(full dotted test id, outcome inner xml)] -> the release-gate row."""
+        d = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, d, True)
+        x = os.path.join(d, "j.xml"); res = os.path.join(d, "r.jsonl")
+        body = "".join(f'<testcase classname="{t.rsplit(".", 1)[0]}" name="{t.rsplit(".", 1)[1]}">{inner}</testcase>' for t, inner in cases)
+        open(x, "w").write(f"<testsuites><testsuite>{body}</testsuite></testsuites>")
+        subprocess.run([sys.executable, os.path.join(SC, "wrv_report.py"), "junit", x, res, "--min-client-safe", "0", "--min-ui", "0"], capture_output=True, text=True, check=True)
+        return {json.loads(l)["name"]: json.loads(l) for l in open(res)}["required PDF security tests ran and passed (release gate)"]
+
+    def test_pdf_security_release_gate(self):
+        import wrv_report
+        need = wrv_report.REQUIRED_PDF_SECURITY
+        self.assertEqual(self.gate([(t, "") for t in need])["status"], "PASS")
+        skipped = self.gate([(t, '<skipped message="needs Chrome and poppler"/>' if "PdfArtifact" in t else "") for t in need])       # a Mac without poppler
+        self.assertEqual(skipped["status"], "FAIL"); self.assertIn("brew install poppler", skipped["detail"]); self.assertIn("skipped", skipped["detail"])
+        self.assertEqual(self.gate([(t, "") for t in need[1:]])["status"], "FAIL")                                                     # a required test that never ran
+        failed = self.gate([(t, '<failure message="x">x</failure>' if t == need[4] else "") for t in need])
+        self.assertEqual(failed["status"], "FAIL")
+        for must in ("test_private_pdf_title_is_rejected_by_both_checkers_with_every_extractor", "test_title_the_extractor_dropped_is_still_caught_from_the_file_itself"):
+            self.assertTrue(any(must in t for t in need), must)                                                                      # the confirmed security failure is gated by name
+
+    def test_probe_page_has_enough_text_for_the_pdf_verifier(self):
+        """The optional metadata probe died with 'verify: the PDF has no selectable text' because its page had 10 characters (the verifier needs 20). Real exports are unaffected."""
+        import re
+        sys.path.insert(0, HERE)
+        from desktop import pdf_mac
+        src = open(os.path.join(SC, "macos_native.py"), encoding="utf-8").read()
+        html = re.search(r'render_native\("(<html>.*?)", pdf\)', src).group(1)
+        text = re.sub(r"<[^>]+>", "", html.split("</head>")[1])
+        self.assertIsNone(pdf_mac.check_pages(1, lambda i: ((612.0, 792.0), len(text.strip()), None)))
+        self.assertEqual(pdf_mac.check_pages(1, lambda i: ((612.0, 792.0), len("Probe page"), None)), "the PDF has no selectable text")    # the old page
+
+    def test_validate_script_offers_rebuild_and_warns_about_missing_poppler(self):
+        src = open(os.path.join(SC, "validate_macos.sh"), encoding="utf-8").read()
+        self.assertIn("--rebuild", src); self.assertIn("build_macos.sh", src); self.assertIn("brew install poppler", src)
+
     def test_dependency_check_gives_install_instructions(self):
         d = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, d, True)
         res = os.path.join(d, "r.jsonl")

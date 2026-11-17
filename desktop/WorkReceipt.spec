@@ -6,7 +6,7 @@ import app_core
 
 a = Analysis([os.path.join(ROOT, "desktop", "main.py")], pathex=[ROOT],
              datas=[(os.path.join(ROOT, "ui"), "ui"), (os.path.join(ROOT, "examples", "make_demo_workspace.py"), "examples")],
-             hiddenimports=["webview.platforms.cocoa", "PyObjCTools.AppHelper"], excludes=["tkinter", "unittest", "test"])
+             hiddenimports=["webview.platforms.cocoa", "PyObjCTools.AppHelper", "buildinfo", "_build_info"], excludes=["tkinter", "unittest", "test"])
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="WorkReceipt", console=False, argv_emulation=False,
           target_arch=None, codesign_identity=None, entitlements_file=None)
