@@ -229,8 +229,8 @@ class MacInspect(unittest.TestCase):
     def test_real_chrome_pdf_passes_byte_verifier(self):
         if not HAVE: self.skipTest("needs Chrome")
         p = to_pdf(w.render(ctx(30, 60, 20)), "real", self.tmp); d = self.pm.inspect_pdf(p)
-        self.assertIn(d["verifier"], ("bytes", "unverified")); self.assertIsNone(d["problem"]); self.assertTrue(d["signature"])
-        if d["verifier"] == "bytes": self.assertGreaterEqual(d["pages"], 3)
+        self.assertIn(d["verifier"], ("pdfkit", "bytes", "unverified")); self.assertIsNone(d["problem"]); self.assertTrue(d["signature"])  # pdfkit is the primary verifier on macOS
+        if d["verifier"] in ("pdfkit", "bytes"): self.assertGreaterEqual(d["pages"], 3)
 
 
 @unittest.skipUnless(HAVE, "needs Chrome + poppler")
