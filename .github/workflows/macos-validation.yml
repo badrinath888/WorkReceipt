@@ -16,8 +16,8 @@ concurrency:
 
 jobs:
   validate:
-    # macos-14 = Apple Silicon with a logged-in GUI session, which the WKWebView/PDFKit/app-launch stages need.
-    runs-on: macos-14
+    # macos-latest = Apple Silicon with a logged-in GUI session, which the WKWebView/PDFKit/app-launch stages need. (macos-14 was rejected for this repo.)
+    runs-on: macos-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
