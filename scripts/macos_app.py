@@ -73,6 +73,10 @@ def run_app(label, cmd, ctx, required):
 
         def window():
             w = window_of(p.pid)
+            for _ in range(30):  # the window server can report 0x0 for a moment after "shown"; poll, same strict assertion
+                if w and w[0] >= 940 and w[1] >= 620:
+                    break
+                time.sleep(0.5); w = window_of(p.pid)
             need(w is not None, "no window owned by the app process")
             need(w[0] >= 940 and w[1] >= 620, f"window is {w[0]:.0f}x{w[1]:.0f}, smaller than the app minimum")
             return f"{w[0]:.0f}x{w[1]:.0f} window, on screen: {w[2]}"
