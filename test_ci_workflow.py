@@ -7,7 +7,9 @@ W = "\n".join(l.split("  #")[0] for l in W.splitlines() if not l.lstrip().starts
 class CIWorkflow(unittest.TestCase):
     def test_runs_the_full_harness_unweakened(self):
         self.assertIn("./scripts/validate_macos.sh --rebuild", W)
-        self.assertNotIn("--quick", W); self.assertNotIn("continue-on-error", W)
+        self.assertNotIn("--quick", W)
+        step = W.split("- name: Full native validation")[1].split("- name:")[0]       # the gating step is never non-fatal
+        self.assertNotIn("continue-on-error", step)
         self.assertNotIn("|| true\n      - name: Full", W)
 
     def test_triggers_and_safety(self):

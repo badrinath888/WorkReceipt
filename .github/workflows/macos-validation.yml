@@ -43,6 +43,12 @@ jobs:
           python3 -c "import objc, Quartz, WebKit; Quartz.PDFDocument; WebKit.WKWebView; print('PyObjC/PDFKit/WKWebView OK')"
           which pdftotext pdfinfo pdftoppm
 
+      - name: Probe PDF Creator (diagnostic, synthetic page)
+        continue-on-error: true
+        run: |
+          python3 -m venv .validate-venv && .validate-venv/bin/python -m pip install -q "pywebview>=5.3,<6" pyobjc-framework-Quartz pyobjc-framework-WebKit
+          timeout 180 .validate-venv/bin/python scripts/creator_probe.py
+
       - name: Full native validation
         id: validate
         run: ./scripts/validate_macos.sh --rebuild --keep
