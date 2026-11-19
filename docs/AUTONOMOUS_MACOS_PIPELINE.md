@@ -8,6 +8,8 @@
 - **Diagnostics (always uploaded, 14 days):** artifact `macos-validation-<run id>` = report, `results.jsonl`, junit, logs, `context.txt` (commit, runner OS/arch/image). Synthetic sandbox data only. The job summary shows the report.
 - **Reproduce:** `./scripts/validate_macos.sh --rebuild --keep`.
 
-## Status (run 44577348379, commit c34f414, macOS 26.7.2 arm64)
+## Status
 
-CI triggered and completed: **FAILED, correctly.** All stages ran; the packaged app passed everything. Two required checks failed (`native:` and `source app: approve and export HTML + PDF`): on this runner the script-run PDF gets Creator = a 6-letter string (`not_an_engine_string`), which `client_safe.py` refuses (only engine names or exactly `WorkReceipt` are allowed). Not fixed here: accepting another Creator value is a privacy-validator decision, not a CI change. Assertions are unchanged.
+Run 44589291820 (commit 3da3497, macOS 26.7.2 arm64): **71 PASS, 0 FAIL, 0 BLOCKED, 0 SKIP.** https://github.com/badrinath888/WorkReceipt/actions/runs/44589291820
+
+History: the first run (44577348379) failed the script-run "approve and export" stages. A diagnostic probe showed Creator was `'Python'`, taken from the host `Python.app` `CFBundleName` (not the process name; `setProcessName` has no effect). `desktop/pdf_mac.py:_stamp_creator` now sets the in-memory `CFBundleName` to the fixed product name before the print job. The Creator allowlist is unchanged (`test_pdf_creator_stamp.py` asserts `Python` is still refused). macOS has no `timeout(1)`; use step `timeout-minutes`.
