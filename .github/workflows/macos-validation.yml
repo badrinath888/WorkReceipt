@@ -45,9 +45,10 @@ jobs:
 
       - name: Probe PDF Creator (diagnostic, synthetic page)
         continue-on-error: true
+        timeout-minutes: 5
         run: |
           python3 -m venv .validate-venv && .validate-venv/bin/python -m pip install -q "pywebview>=5.3,<6" pyobjc-framework-Quartz pyobjc-framework-WebKit
-          timeout 180 .validate-venv/bin/python scripts/creator_probe.py
+          .validate-venv/bin/python scripts/creator_probe.py
 
       - name: Full native validation
         id: validate
