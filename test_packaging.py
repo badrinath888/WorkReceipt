@@ -1,6 +1,7 @@
 """M6: packaging configuration, PDF export, data locations, error messages. Runs on Linux; the macOS-only pieces are only
 statically checked here (see docs/MAC_VALIDATION.md)."""
 import json, os, plistlib, py_compile, re, shutil, subprocess, sys, tempfile, unittest
+from testsupport import modules_patched
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import app_core as core
@@ -173,14 +174,14 @@ class PdfBackendFailures(unittest.TestCase):
     """The macOS WebKit code itself cannot run on Linux; these tests cover its failure handling and the error plumbing."""
     def test_import_failure_is_immediate_and_names_the_stage(self):
         from desktop import pdf_mac
-        with mock.patch.dict(sys.modules, {"PyObjCTools": None}):
+        with modules_patched({"PyObjCTools": None}):
             with self.assertRaises(pdf_mac.PdfError) as c: pdf_mac.render_pdf("<p>x</p>", "/tmp/x.pdf", timeout=1)
         self.assertEqual(c.exception.stage, "import")
 
     def _fake_apphelper(self, runner):
         import types
         pkg = types.ModuleType("PyObjCTools"); mod = types.ModuleType("PyObjCTools.AppHelper"); mod.callAfter = runner; pkg.AppHelper = mod
-        return mock.patch.dict(sys.modules, {"PyObjCTools": pkg, "PyObjCTools.AppHelper": mod})
+        return modules_patched({"PyObjCTools": pkg, "PyObjCTools.AppHelper": mod})
 
     def test_setup_error_on_main_thread_fails_fast_not_after_timeout(self):
         import time

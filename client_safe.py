@@ -501,6 +501,9 @@ def _tokens(s):
 # Anything else in Creator/Producer fails. See docs/CLIENT_SAFE_MODE.md (remaining risks).
 _PRODUCER_OK = re.compile(r"(?i)^(?:skia/pdf m?\d+|chrome(?:ium)?(?:/[\d.]+)?|quartz pdfcontext|macos version [\d.]+ \(build \w+\)(?: quartz pdfcontext)?|webkit|"
                           r"mozilla/5\.0 \([\w .;:,_-]{1,60}\) applewebkit/[\d.]+ \(khtml, like gecko\)[\w ./-]{0,60})$")
+# The ONE non-engine Creator value accepted: the product's own name, exactly (case-sensitive, nothing before or after). A bundled macOS app's print job
+# names itself as Creator, which a script run does not; the string is fixed by us, comes from no input, and carries nothing. Anything else is refused.
+PRODUCT_NAME = "WorkReceipt"
 _PDF_FORBID = (b"/URI", b"/JavaScript", b"/JS", b"/Launch", b"/EmbeddedFile", b"/FileAttachment", b"/OpenAction", b"/GoToR", b"/SubmitForm", b"/RichMedia", b"/XFA", b"/AcroForm", b"/Names")
 PDF_FOOTER_WORDS = {"workreceipt", "work", "report", "page", "of"}
 # Some extractors (pypdf) join the footer's separate text runs without a space ("1" + "WorkReceipt" -> "1workreceipt"). A token made ONLY of
@@ -528,7 +531,8 @@ def pdf_metadata_problems(meta, title, private_terms=(), local_ids=()):
             if val not in ("", title):
                 out[k] = "title_differs"
         elif k in ("Creator", "Producer"):
-            if val.strip() and not _PRODUCER_OK.match(val.strip()):
+            v = val.strip()
+            if v and not _PRODUCER_OK.match(v) and not (k == "Creator" and val == PRODUCT_NAME):
                 out[k] = "not_an_engine_string"
         elif val.strip():
             out[k] = "must_be_empty"
@@ -598,6 +602,39 @@ def raw_info_fields(skeleton):
         except (ValueError, UnicodeError):
             out[m.group(1).decode("ascii")] = "\ufffd"        # undecodable value: present and not empty, so it is refused
     return out
+
+
+def _shape(v):
+    """Coarse shape of a value without revealing it: character classes present."""
+    cls = [n for n, t in (("letters", any(c.isalpha() for c in v)), ("digits", any(c.isdigit() for c in v)), ("spaces", " " in v), ("slash", "/" in v or "\\" in v),
+                          ("dots", "." in v), ("non-ascii", any(ord(c) > 127 for c in v)), ("other-punct", any(not c.isalnum() and c not in " /\\." for c in v))) if t]
+    return "+".join(cls) or "none"
+
+
+def metadata_diagnostics(meta, title, private_terms=(), local_ids=()):
+    """Safe per-field diagnostics for a refused (or accepted) PDF: field name, classification, reason code, and - only for values that are
+    explicitly benign (empty, the rendering engine, the product name, the approved title) - the value. Rejected values appear as length and character
+    classes only, never as text, so an account name, path or confidential term is never echoed."""
+    probs = pdf_metadata_problems(meta, title, private_terms, local_ids)
+    out = []
+    for k, v in sorted((str(k).lstrip("/"), str(v or "")) for k, v in meta.items()):
+        if k in ("CreationDate", "ModDate", "Trapped"):
+            continue
+        if k in probs:
+            out.append({"field": k, "classification": "rejected", "reason": probs[k], "length": len(v), "shape": _shape(v)})
+        elif not v.strip():
+            out.append({"field": k, "classification": "empty", "reason": "ok"})
+        elif k == "Creator" and v == PRODUCT_NAME:
+            out.append({"field": k, "classification": "product_name", "reason": "ok", "value": v})
+        elif k == "Title":
+            out.append({"field": k, "classification": "report_title", "reason": "ok"})
+        else:
+            out.append({"field": k, "classification": "engine_string", "reason": "ok", "value": v[:90]})
+    return out
+
+
+def describe_metadata_diagnostics(diag):
+    return "; ".join(f"{d['field']}: {d['classification']} ({d['reason']}" + (f", {d['length']} chars, {d['shape']}" if "length" in d else "") + ")" + (f" = {d['value']!r}" if "value" in d else "") for d in diag) or "(no fields)"
 
 
 def describe_pdf_metadata(meta, title, private_terms=(), local_ids=()):

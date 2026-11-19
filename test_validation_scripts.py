@@ -53,26 +53,24 @@ class CrossProcessApproval(unittest.TestCase):
     """Root cause of 'approval was refused' for the launched source/packaged apps: finding ids are salted per process (app_core._SALT), so
     a review computed in the harness process can never match a separately launched app. This is correct product behaviour; the harness
     must review through the app's own API. Uses a REAL second process (the same app the desktop shell wraps)."""
-    @classmethod
-    def setUpClass(cls):
+    def setUp(self):                                                          # a fresh app process per test: reviews live in the process, so a shared one made the tests order-dependent
         from test_client_safe import hostile_ws
-        cls.ws = hostile_ws()
+        self.ws = hostile_ws()
         s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
-        cls.proc = subprocess.Popen([sys.executable, os.path.join(HERE, "workreceipt_app.py"), "--no-open", "--port", str(port)], env=dict(os.environ), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.proc = subprocess.Popen([sys.executable, os.path.join(HERE, "workreceipt_app.py"), "--no-open", "--port", str(port)], env=dict(os.environ), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         import wrv
-        cls.wrv = wrv
+        self.wrv = wrv
         for _ in range(60):
             try:
-                cls.api = wrv.Api(f"http://127.0.0.1:{port}"); break
+                self.api = wrv.Api(f"http://127.0.0.1:{port}"); break
             except Exception:                                                  # noqa: BLE001
                 time.sleep(0.25)
         else:
             raise RuntimeError("the second app process did not start")
-        cls.ctx = wrv.Ctx(cls.ws)
+        self.ctx = wrv.Ctx(self.ws)
 
-    @classmethod
-    def tearDownClass(cls):
-        cls.proc.terminate(); cls.proc.wait(10); cls.ws.done()
+    def tearDown(self):
+        self.proc.terminate(); self.proc.wait(10); self.ws.done()
 
     def approve(self, ctx_ap_override=None):
         w, ctx, api = self.wrv, self.ctx, self.api

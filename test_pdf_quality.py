@@ -2,6 +2,7 @@
 Synthetic data only. Every PDF is rendered page-by-page and checked for: Letter size, page count, blank pages, text inside margins,
 selectable/searchable text, page order, completeness vs the HTML, colours present, and absence of sentinel secrets."""
 import json, os, random, re, shutil, subprocess, sys, tempfile, types, unittest
+from testsupport import modules_patched
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import workreceipt as w
@@ -177,7 +178,7 @@ class MacInspect(unittest.TestCase):
         return p
 
     def with_quartz(self, mod):
-        return mock.patch.dict(sys.modules, {"Quartz": mod})
+        return modules_patched({"Quartz": mod})
 
     def test_source_does_not_use_nonexistent_pdfkit_constructor(self):
         src = open(os.path.join(HERE, "desktop", "pdf_mac.py")).read()

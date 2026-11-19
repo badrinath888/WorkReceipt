@@ -185,6 +185,11 @@ def base_draft(ctx):
             "verification": {"mode": "auto"}}
 
 
+def cs_diag(diag):
+    import client_safe
+    return client_safe.describe_metadata_diagnostics(diag)
+
+
 def workflow(api, ctx, label, inspect_pdf, producer_re=None):
     """preview -> approve -> export HTML+PDF, then every negative path. Records PASS/FAIL per behaviour. Returns the exported artifacts."""
     import pdfkit_check as pk
@@ -199,7 +204,8 @@ def workflow(api, ctx, label, inspect_pdf, producer_re=None):
         c, ap = api.post("/api/client/approve", body(ctx, d, confirm={"privacy_review": True, "content_hash": pv["content_hash"]}))
         need(c == 200 and ap.get("token"), f"approval was refused: HTTP {c} reason={ap.get('reason')} failed={ap.get('failed')} missing={len(ap.get('missing') or [])}")
         c, ex = api.post("/api/client/export", body(ctx, d, token=ap["token"], pdf=True))
-        need(c == 200 and ex.get("ok"), f"export refused: {ex.get('reason')} {ex.get('failed')}")
+        need(c == 200 and ex.get("ok"), f"export refused: {ex.get('reason')} {ex.get('failed')}"
+             + (" | PDF metadata (safe diagnostics): " + cs_diag(ex["metadata_diagnostics"]) if ex.get("metadata_diagnostics") else ""))
         need(not ex.get("pdf_failed"), f"PDF was not produced: {ex.get('pdf_error')}")
         for k in ("html_path", "pdf_path"):
             need(ex.get(k) and os.path.isfile(ex[k]), f"{k} missing")

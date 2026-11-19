@@ -17,7 +17,7 @@ def add(path, name, status, detail="", required=True):
 
 
 CRITICAL = ("test_client_safe", "test_client_safe_ui", "test_pdf_quality", "test_validation_scripts", "test_e2e_desktop", "test_interaction_audit",
-            "test_pdf_metadata_injection", "test_buildinfo")
+            "test_pdf_metadata_injection", "test_buildinfo", "test_native_import_isolation")
 # Release gate: these PDF security tests must have RUN AND PASSED (a skip is a failure). Several need poppler (`brew install poppler`) and Chrome.
 REQUIRED_PDF_SECURITY = (
     "test_client_safe.PdfArtifact.test_metadata_is_checked", "test_client_safe.PdfArtifact.test_hidden_text_is_detected",
@@ -26,6 +26,10 @@ REQUIRED_PDF_SECURITY = (
     "test_pdf_metadata_injection.InjectedPdfMetadata.test_title_the_extractor_dropped_is_still_caught_from_the_file_itself",
     "test_pdf_metadata_injection.InjectedPdfMetadata.test_other_information_fields_are_rejected",
     "test_pdf_metadata_injection.ExportWithoutPoppler.test_client_export_refuses_a_pdf_whose_title_was_changed_after_printing",
+    "test_pdf_metadata_injection.CreatorPolicy.test_arbitrary_creators_are_refused_by_the_product_validator",
+    "test_pdf_metadata_injection.CreatorInRealPdf.test_malicious_creator_is_rejected_by_both_checkers_with_every_extractor",
+    "test_pdf_metadata_injection.ExportRefusalDiagnostics.test_malicious_creator_refuses_the_export_and_reports_only_field_class_reason",
+    "test_native_import_isolation.NoSnapshotPatchingAnywhere.test_no_test_or_script_uses_patch_dict_on_sys_modules",
 )
 
 

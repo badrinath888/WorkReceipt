@@ -2,6 +2,7 @@
 (The macOS run: the source app exported, the packaged .app was refused with validation ['metadata'] - consistent with an app built before the
 metadata fix, but nothing in the harness could say which source it contained. VERSION alone cannot: it did not change between those builds.)"""
 import json, os, shutil, stat, subprocess, sys, tempfile, textwrap, unittest
+from testsupport import modules_patched
 from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -76,13 +77,13 @@ class Reporting(unittest.TestCase):
 
     def test_packaged_app_reports_what_was_baked_in_not_its_live_files(self):
         fake = mock.MagicMock(FINGERPRINT="a" * 64, GIT="abc1234", DIRTY=False, BUILT_AT="2026-11-17T09:00:00")
-        with mock.patch.object(sys, "frozen", True, create=True), mock.patch.dict(sys.modules, {"_build_info": fake}):
+        with mock.patch.object(sys, "frozen", True, create=True), modules_patched({"_build_info": fake}):
             got = bi.current("9.9.9")
         self.assertEqual((got["fingerprint"], got["git"], got["source"]), ("a" * 64, "abc1234", "packaged build"))
         self.assertFalse(bi.compare(got, bi.source_fingerprint(HERE))[0])                     # baked from other source -> stale
 
     def test_packaged_app_without_build_identity_never_matches(self):
-        with mock.patch.object(sys, "frozen", True, create=True), mock.patch.dict(sys.modules, {"_build_info": None}):
+        with mock.patch.object(sys, "frozen", True, create=True), modules_patched({"_build_info": None}):
             got = bi.current("9.9.9")
         self.assertEqual(got["fingerprint"], "unknown"); self.assertFalse(bi.compare(got, bi.source_fingerprint(HERE))[0])
 

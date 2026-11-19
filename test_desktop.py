@@ -1,4 +1,5 @@
 import json, os, unittest, urllib.request, urllib.error
+from testsupport import modules_patched
 from unittest import mock
 from desktop import main as dm
 import workreceipt_app as app
@@ -30,7 +31,7 @@ class Bridge(unittest.TestCase):
         self.nat = dm.Native(); self.nat._window = types.SimpleNamespace(create_file_dialog=lambda kind, directory="": ["/tmp/x"]); self.nat._ready.set()
 
     def fake_webview(self):
-        return mock.patch.dict(sys.modules, {"webview": self.types.SimpleNamespace(FileDialog=self.types.SimpleNamespace(FOLDER=2), FOLDER_DIALOG=2, __version__="5.4")})
+        return modules_patched({"webview": self.types.SimpleNamespace(FileDialog=self.types.SimpleNamespace(FOLDER=2), FOLDER_DIALOG=2, __version__="5.4")})
 
     def test_no_js_api_and_no_public_state(self):
         src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "desktop", "main.py")).read()

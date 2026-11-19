@@ -823,7 +823,16 @@ def client_export(opts, draft, approved, token, want_pdf, settings=None):
                 facts = (PDF_INSPECTOR or cs.pdf_facts_cli)(spdf)
                 fails = cs.validate_pdf(spdf, r, back, facts, st["terms"])
                 if fails:
-                    return _blocked("validation", fails)
+                    blocked = _blocked("validation", fails)
+                    if any(f.startswith("metadata") for f in fails):
+                        diag = cs.metadata_diagnostics((facts or {}).get("meta") or {}, cs.title_of(r), st["terms"], cs.local_identifiers())
+                        blocked["metadata_diagnostics"] = diag                       # field, classification, reason, length/shape; never the rejected value
+                        try:
+                            with open(os.path.join(_home(), "pdf-metadata-diag.txt"), "w", encoding="utf-8") as f:
+                                f.write(cs.describe_metadata_diagnostics(diag) + "\n")
+                        except OSError:
+                            pass
+                    return blocked
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         try:
             os.makedirs(s["out_dir"], exist_ok=True)

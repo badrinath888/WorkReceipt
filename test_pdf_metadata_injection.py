@@ -176,5 +176,108 @@ class ExportWithoutPoppler(Base):
         self.assertNotIn("oracle", str(r).lower())
 
 
+BAD_CREATORS = ("/Users/zelda-quill/billing-core", "C:\\Users\\zelda-quill\\work", "Zelda's MacBook Pro", "Python", "oracle-fin-01", "Globex Corp internal",
+                "workreceipt", "WorkReceipt ", " WorkReceipt", "WorkReceipt Inc", "WorkReceipt /Users/zelda-quill", "WorkReceipt.app", "macOS notes for Globex")
+
+
+class CreatorPolicy(unittest.TestCase):
+    """Packaged-app finding: validation ['metadata', 'metadata_creator']. A bundled app's WKWebView print job names the app as Creator; a script run does not.
+    Exactly the product name is accepted for Creator (and only Creator). Everything else stays refused, in the product validator AND the independent checker."""
+    TITLE, TERMS, LOCAL = "Work report for Initech", ("Globex", "oracle-fin-01"), ["zelda-quill", "mbp-zelda-7"]
+    PKG = {"Title": "", "Author": "", "Subject": "", "Keywords": "", "Creator": "WorkReceipt", "Producer": "macOS Version 27.2 (Build 27C44) Quartz PDFContext",
+           "CreationDate": "D:20261117090000Z", "ModDate": "D:20261117090000Z"}
+
+    def probs(self, **over):
+        return cs.pdf_metadata_problems(dict(self.PKG, **over), self.TITLE, self.TERMS, self.LOCAL)
+
+    def test_the_packaged_wkwebview_shape_is_accepted(self):
+        self.assertEqual(self.probs(), {})
+        for ok in ("WorkReceipt", "", "Chrome", "Skia/PDF m153", "Quartz PDFContext"):
+            self.assertEqual(self.probs(Creator=ok), {}, ok)
+
+    def test_arbitrary_creators_are_refused_by_the_product_validator(self):
+        for bad in BAD_CREATORS:
+            with self.subTest(bad):
+                self.assertIn("Creator", self.probs(Creator=bad))
+
+    def test_the_exemption_is_creator_only(self):
+        self.assertIn("Producer", self.probs(Producer="WorkReceipt"))
+        for k in ("Author", "Subject", "Keywords", "Company"):
+            self.assertIn(k, self.probs(**{k: "WorkReceipt"}))
+        self.assertIn("Title", self.probs(Title="WorkReceipt"))
+
+    def test_the_independent_checker_has_its_own_strict_rule(self):
+        for bad in BAD_CREATORS:
+            with self.subTest(bad):
+                self.assertFalse(pk.ENGINE_RX.match(bad.strip()) and bad != "WorkReceipt")
+        self.assertTrue(pk.ENGINE_RX.match("macOS Version 27.2 (Build 27C44) Quartz PDFContext") and pk.ENGINE_RX.match("Skia/PDF m153") and pk.ENGINE_RX.match("Chrome"))
+        self.assertFalse(pk.ENGINE_RX.match("macOS notes for Globex"))           # the old substring rule let this through
+
+    def test_diagnostics_name_field_class_and_reason_but_never_a_rejected_value(self):
+        d = cs.metadata_diagnostics(dict(self.PKG, Creator="/Users/zelda-quill/billing-core"), self.TITLE, self.TERMS, self.LOCAL)
+        text = cs.describe_metadata_diagnostics(d)
+        row = [x for x in d if x["field"] == "Creator"][0]
+        self.assertEqual((row["classification"], row["reason"], row["length"]), ("rejected", "mentions_private_or_local_name", 31))
+        self.assertIn("slash", row["shape"]); self.assertNotIn("value", row)
+        for leak in ("zelda", "billing", "/Users"):
+            self.assertNotIn(leak, text)
+        self.assertIn("Creator: rejected (mentions_private_or_local_name, 31 chars", text)
+        good = cs.describe_metadata_diagnostics(cs.metadata_diagnostics(self.PKG, self.TITLE, self.TERMS, self.LOCAL))
+        self.assertIn("Creator: product_name (ok) = 'WorkReceipt'", good); self.assertIn("Author: empty (ok)", good)
+        other = cs.metadata_diagnostics(dict(self.PKG, Creator="Python"), self.TITLE, self.TERMS, self.LOCAL)
+        self.assertEqual([x for x in other if x["field"] == "Creator"][0]["reason"], "not_an_engine_string")
+        self.assertNotIn("Python", cs.describe_metadata_diagnostics(other))
+
+
+@unittest.skipUnless(HAS_CHROME and pypdf, "needs Chrome and pypdf")
+class CreatorInRealPdf(InjectedPdfMetadata):
+    """Same real printed report, Creator written into the file."""
+    def test_malicious_creator_is_rejected_by_both_checkers_with_every_extractor(self):
+        for bad in BAD_CREATORS:
+            for label, ctx in extractors():
+                with self.subTest(creator=bad, extractor=label), ctx():
+                    path = self.inject("c", Creator=bad)
+                    got = self.product(path)
+                    self.assertIn("metadata", got); self.assertIn("metadata_creator", got)
+                    self.assertIn("metadata_creator", self.independent(path))
+
+    def test_creator_the_extractor_dropped_is_still_caught_from_the_file(self):
+        path = self.inject("cd", Creator="/Users/zelda-quill/billing-core")
+        got = self.product(path, dict(cs.pdf_facts_cli(path), meta={"Creator": "", "Title": ""}))
+        self.assertIn("metadata_creator", got)
+
+    def test_product_name_creator_with_quartz_producer_is_accepted_by_both(self):
+        for label, ctx in extractors():
+            with self.subTest(extractor=label), ctx():
+                path = self.inject("pk", Creator="WorkReceipt", Producer="macOS Version 27.2 (Build 27C44) Quartz PDFContext")
+                self.assertEqual(self.product(path), []); self.assertEqual(self.independent(path), [])
+
+
+
+@unittest.skipUnless(HAS_CHROME and pypdf, "needs Chrome and pypdf")
+class ExportRefusalDiagnostics(Base):
+    def test_malicious_creator_refuses_the_export_and_reports_only_field_class_reason(self):
+        d = draft(); t = self.f.approve(d)["token"]
+        real = core.to_pdf
+
+        def tampered(p):
+            out = real(p)
+            pk.inject_info(out, out + ".t", {"Creator": "/Users/zelda-quill/billing-core"}); os.replace(out + ".t", out)
+            return out
+        core.to_pdf = tampered
+        try:
+            r = core.client_export(self.f.o, d, self.f.ap, t, True)
+        finally:
+            core.to_pdf = real
+        self.assertFalse(r["ok"]); self.assertEqual(r["reason"], "validation"); self.assertIn("metadata_creator", r["failed"]); self.assertEqual(self.out_files(), [])
+        row = [x for x in r["metadata_diagnostics"] if x["field"] == "Creator"][0]
+        self.assertEqual((row["classification"], row["reason"]), ("rejected", "not_an_engine_string")); self.assertNotIn("value", row)
+        diag_file = open(os.path.join(core._home(), "pdf-metadata-diag.txt"), encoding="utf-8").read()
+        for blob in (str(r).lower(), diag_file.lower()):
+            for leak in ("zelda", "billing-core", "/users"):
+                self.assertNotIn(leak, blob)
+        self.assertIn("Creator: rejected", diag_file)
+
+
 if __name__ == "__main__":
     unittest.main()

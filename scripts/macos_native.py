@@ -67,7 +67,7 @@ def run():
         pdf = os.path.join(ROOT, "probe.pdf")
         render_native("<html><head><meta charset=utf-8><title>Work report for Initech</title></head><body><p>Synthetic probe page for the metadata diagnostic, with enough text to be selectable.</p></body></html>", pdf)
         info = pk.inspect(pdf)
-        return f"{info['backend']}: " + cs.describe_pdf_metadata(info["meta"], "Work report for Initech", (), []) + f"; annotations={info['annotations']}"
+        return f"{info['backend']}: " + cs.describe_metadata_diagnostics(cs.metadata_diagnostics(info["meta"], "Work report for Initech", (), [])) + f"; annotations={info['annotations']}"
     check("native: PDF information fields written by this engine (diagnostic)", meta_probe, required=False)
     ws = wrv.make_workspace(ROOT)
     ctx = wrv.Ctx(ws)
@@ -147,7 +147,8 @@ def run():
         need(cs.validate_pdf(base, report, real_html, facts_ok, terms) == [], "the untouched WKWebView PDF was refused by the product validator; cannot judge metadata checks")
         summary = []
         for field, value, want_ind in (("Title", "oracle-fin-01 internal", ("canary_in_metadata", "metadata_title")), ("Title", "Quarterly payroll notes", ("metadata_title",)),
-                                       ("Author", "Zed Author", ("metadata_extra",)), ("Subject", "internal", ("metadata_extra",)), ("Keywords", "billing, payroll", ("metadata_extra",))):
+                                       ("Creator", "/Users/zelda-quill/billing-core", ("metadata_creator",)), ("Creator", "Zelda's MacBook Pro", ("metadata_creator",)),
+                                       ("Creator", "WorkReceipt Internal Billing", ("metadata_creator",)), ("Author", "Zed Author", ("metadata_extra",)), ("Subject", "internal", ("metadata_extra",)), ("Keywords", "billing, payroll", ("metadata_extra",))):
             out = os.path.join(tdir, f"meta-{field.lower()}.pdf")
             back = pdfkit_check.inject_info(base, out, {field: value})
             written = back.get(field) == value
@@ -160,7 +161,12 @@ def run():
             need("metadata" in app_fails and "metadata_" + field.lower() in app_fails, f"the product validator accepted a private PDF {field.lower()} ({stages})")
             need(any(c in ind for c in want_ind), f"the independent checker accepted a private PDF {field.lower()} ({stages})")
             summary.append(f"{field}: extractor read={'yes' if read else 'no'}")
-        return "private Title/Author/Subject/Keywords injected into a real WKWebView PDF were refused by both checks (" + "; ".join(summary) + ")"
+        okp = os.path.join(tdir, "meta-creator-ok.pdf")                      # the one accepted non-engine Creator: the product's exact name
+        pdfkit_check.inject_info(base, okp, {"Creator": "WorkReceipt"})
+        okf = inspect_native(okp)
+        need(cs.validate_pdf(okp, report, real_html, okf, terms) == [] and "metadata_creator" not in pk.verify(okp, real_html, title="Billing Revamp")[0],
+             "Creator = the exact product name was refused")
+        return "private Title/Creator/Author/Subject/Keywords injected into a real WKWebView PDF were refused by both checks (" + "; ".join(summary) + ")"
     check("native: private text in PDF metadata is detected", meta)
 
     def link():

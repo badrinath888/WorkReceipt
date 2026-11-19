@@ -11,6 +11,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SELFTEST = os.environ.get("WRV_SELFTEST") == "1"
 FORBID = (b"/URI", b"/JavaScript", b"/JS", b"/Launch", b"/EmbeddedFile", b"/FileAttachment", b"/OpenAction", b"/GoToR", b"/SubmitForm", b"/RichMedia", b"/XFA", b"/AcroForm", b"/Names", b"/Annots")
 LETTER = (612.0, 792.0)
+# Strict, anchored: a Creator/Producer may only name a rendering engine (or, for Creator, exactly the product name). Written separately from client_safe on purpose.
+ENGINE_RX = re.compile(r"(?i)^(skia/pdf m?\d+|chrome(ium)?(/[\d.]+)?|quartz pdfcontext|macos version [\d.]+ \(build \w+\)( quartz pdfcontext)?|webkit|"
+                       r"mozilla/5\.0 \([\w .;:,_-]{1,60}\) applewebkit/[\d.]+ \(khtml, like gecko\)[\w ./-]{0,60})$")
 FOOTER_TOKEN = re.compile(r"^(?:\d+|workreceipt|report|work|page|of)+$")      # footer text some extractors glue together ("1workreceipt"); written separately from the product on purpose
 
 
@@ -143,8 +146,10 @@ def verify(path, html, expect=(), canaries=None, title=None):
         bad.append("metadata_title")
     if any(m.get(k) for k in ("Author", "Subject", "Keywords")):
         bad.append("metadata_extra")
-    if not re.search(r"quartz|skia|chrom|webkit|macos", (m.get("Producer", "") + " " + m.get("Creator", "")), re.I) and (m.get("Producer") or m.get("Creator")):
+    if m.get("Producer", "").strip() and not ENGINE_RX.match(m["Producer"].strip()):
         bad.append("metadata_producer")
+    if m.get("Creator", "").strip() and not ENGINE_RX.match(m["Creator"].strip()) and m["Creator"] != "WorkReceipt":
+        bad.append("metadata_creator")
     sq_text, sq_meta = squeeze(info["text"]), squeeze(" ".join(m.values()))
     for c in canaries:
         s = squeeze(c)
