@@ -30,8 +30,22 @@ class PdfError(RuntimeError):
         self.stage, self.reason = stage, reason
 
 
+def _stamp_creator():
+    """The print job stamps the host bundle's CFBundleName as PDF Creator. Packaged, that is already the product name; a script run
+    hosted by Python.app would stamp 'Python', which Client-Safe Mode rightly refuses. Set the fixed product name in memory (nothing is
+    written to disk, nothing comes from input). Best effort: if the dictionary is read-only the PDF keeps its default and the validator decides."""
+    try:
+        from Foundation import NSBundle
+        from client_safe import PRODUCT_NAME
+        info = NSBundle.mainBundle().infoDictionary()
+        info["CFBundleName"] = PRODUCT_NAME
+    except Exception:                                                # noqa: BLE001
+        pass
+
+
 def render_pdf(html, out_path, timeout=TIMEOUT):
     """Callable from any thread. Returns None on success; raises PdfError otherwise."""
+    _stamp_creator()
     try:
         from PyObjCTools import AppHelper
     except Exception as e:                                           # noqa: BLE001
