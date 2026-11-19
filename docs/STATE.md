@@ -83,3 +83,8 @@ NOT tested: any macOS run, real pywebview/WKWebView window (bridge only stubbed)
 ## v0.6.1 — second Mac run repair
 - Fixes for the second macOS run (see MACOS_AUTOMATED_VALIDATION.md): PDF metadata read from file bytes as well as the extractor, build fingerprint to catch stale packaged apps, footer-token tolerance for the pypdf path, onboarding saves before closing, platform select-all key in tests, poppler/PDF-security release gate.
 - 349 tests pass on Linux (323 + 26 expected skips with poppler hidden). macOS re-run pending; native validation is NOT passed.
+
+
+## v0.6.1 — third Mac run repair
+- PyObjC reload failure: tests no longer snapshot-restore `sys.modules` (see MACOS_AUTOMATED_VALIDATION.md). Creator "WorkReceipt" (exact) accepted; safe metadata diagnostics added; independent Creator/Producer check made strict.
+- Linux: 370 passed (default, class-reversed and two class-shuffled orders); 344 passed + 26 expected skips with poppler hidden (two orders). Two intermittent UI failures seen across runs (one per round) did not reproduce on rerun and are not explained. macOS re-run pending; native validation is NOT passed.

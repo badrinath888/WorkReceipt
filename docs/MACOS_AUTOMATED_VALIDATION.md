@@ -66,3 +66,33 @@ Everything below was reproduced or reasoned from code on Linux. **None of it is 
 ```bash
 cd /path/to/WorkReceipt && git checkout feature/client-safe-mode && git pull && brew install poppler && scripts/validate_macos.sh --rebuild
 ```
+
+
+## Third Mac run: root causes and fixes (code commit f573be3)
+Verified on Linux only (see "Verification status"). Native macOS validation is NOT passed until `scripts/validate_macos.sh --rebuild` passes every required stage on a Mac.
+
+### Blocker 1: `RuntimeError: Reload of objc._objc detected` (7 failures, 2 required PDF security tests)
+- **Cause.** Tests used `mock.patch.dict(sys.modules, ...)`. On exit it clears `sys.modules` and restores a snapshot, which evicts every module first imported inside the block. On a Mac the code under test (`desktop/pdf_mac._classes`, PDFKit via `pdfkit_check`) imports the real PyObjC there, so the next `import objc` re-ran a C extension that cannot be loaded twice. My own `test_buildinfo` used the same pattern, which is why unrelated PDF-injection tests failed later. Not process-isolation: nothing needs a subprocess, the modules must simply never be evicted.
+- **Fix.** `testsupport.modules_patched` sets and restores only the names it changes. `test_native_import_isolation.py` reproduces the failure with a fake extension that refuses a second import, and a guard test fails if `patch.dict(sys.modules` reappears anywhere. No test was skipped or weakened; the injection tests keep their assertions (and assert the injection landed).
+- Also fixed: `CrossProcessApproval` shared one app process between tests (review state leaked), so it failed when run in reverse order.
+
+### Blocker 2: packaged app `validation ['metadata', 'metadata_creator']`
+- **What is confirmed.** The packaged app now reports the right source fingerprint, so this is not a stale build, and the Creator value was refused by the rule "Creator may only name a rendering engine".
+- **What is NOT confirmed.** The actual Creator string was never captured, and WKWebView cannot run here. The leading hypothesis is that a bundled app's print job names the app (`WorkReceipt`) as Creator while a script run leaves it empty. This is a hypothesis.
+- **Change.** Creator is additionally accepted when it is exactly `WorkReceipt` (case-sensitive, no surrounding text, Creator only). Producer, Author, Subject, Keywords, Title and every other field are unchanged; anything else (paths, account/machine names, private terms, other app names, `WorkReceipt Inc`, `workreceipt`) is refused. The independent checker's Creator/Producer rule is now strict and anchored (it used to accept any text containing "macos"/"skia"...).
+- **Diagnostics.** A metadata refusal now returns `metadata_diagnostics` (field, classification, reason, length, character classes) and writes `pdf-metadata-diag.txt` in the app data folder. Only empty, engine, product-name and title values are ever shown; rejected values never are. The harness prints these on a refused export.
+- **If it still fails on the Mac** the failure line will read like `Creator: rejected (not_an_engine_string, 6 chars, letters)`. Send that line; it says what to allow or fix without revealing the value.
+
+### Verification status
+| Claim | Linux | macOS |
+|---|---|---|
+| Reload error fixed | Reproduced with a fake non-reloadable extension; guard test; full suite green | Not yet re-run |
+| Creator rule, diagnostics, independent check | Unit and real-Chrome-PDF injection tests | Not yet run: WKWebView/PDFKit values unseen |
+| Packaged export | Not applicable | Pending |
+Test results: see docs/STATE.md.
+
+### Final Mac run
+```bash
+cd /path/to/WorkReceipt && git checkout feature/client-safe-mode && git pull && scripts/validate_macos.sh --rebuild
+```
+(poppler and Chrome required: `brew install poppler`.)

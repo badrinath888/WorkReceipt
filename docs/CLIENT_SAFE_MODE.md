@@ -20,7 +20,7 @@ Private evidence → Prepare client summary → Privacy review → Client previe
 
 ## Limitations (read these)
 - Screening is heuristic. It cannot detect confidential facts written as plain prose (e.g. an architecture description) or Cyrillic homoglyph spellings of private terms. **The human preview and approval is the real control.**
-- Chrome-generated PDFs carry a producer/UA string in metadata (allowed by pattern).
+- Chrome-generated PDFs carry a producer/UA string in metadata (allowed by pattern). Creator may also be exactly the product name `WorkReceipt` (a bundled macOS app names itself in the print job; unconfirmed on a Mac). Refusals report field, classification and reason only.
 - Not verified on macOS: PDFKit `desktop/pdf_mac.extract_facts`, WKWebView PDF, native dialogs. If the Mac inspector returns nothing, export is blocked (fail closed).
 
 ## Tests
