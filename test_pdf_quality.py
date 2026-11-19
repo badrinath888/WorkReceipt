@@ -65,7 +65,8 @@ class PdfQuality(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         shutil.rmtree(cls.tmp, ignore_errors=True)
-        with open(os.path.join(HERE, "docs", "pdf_qa_results.json"), "w") as f:
+        os.makedirs(os.path.join(HERE, "validation-results"), exist_ok=True)  # gitignored: tests must not dirty tracked files
+        with open(os.path.join(HERE, "validation-results", "pdf_qa_results.json"), "w") as f:
             json.dump([{k: v for k, v in r.items() if k not in ("text", "info")} for r in RESULTS], f, indent=1)
 
     def build(self, name, c, min_pages, max_pages):
