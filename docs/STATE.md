@@ -88,3 +88,9 @@ NOT tested: any macOS run, real pywebview/WKWebView window (bridge only stubbed)
 ## v0.6.1 — third Mac run repair
 - PyObjC reload failure: tests no longer snapshot-restore `sys.modules` (see MACOS_AUTOMATED_VALIDATION.md). Creator "WorkReceipt" (exact) accepted; safe metadata diagnostics added; independent Creator/Producer check made strict.
 - Linux: 370 passed (default, class-reversed and two class-shuffled orders); 344 passed + 26 expected skips with poppler hidden (two orders). Two intermittent UI failures seen across runs (one per round) did not reproduce on rerun and are not explained. macOS re-run pending; native validation is NOT passed.
+
+## v0.7.0 Multi-AI (branch feature/multi-ai-support)
+- Done: providers.py (activity model, claude/codex/opencode adapters, cursor documented as unsupported), Git-only mode, multi-provider discovery, settings + UI card, report wording, test_providers.py (7), docs/MULTI_AI.md.
+- Local tests: 331 pass; Playwright e2e suites cannot run locally (playwright not installed) -> rely on CI.
+- Repair attempts: 2 (syntax error in report text edit; test expectations). macOS CI runs used: 0 of 4.
+- Not verified: real Codex/OpenCode log formats (never read personal logs, by design).

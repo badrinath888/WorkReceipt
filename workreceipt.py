@@ -582,15 +582,20 @@ def render(ctx):
              "<p><span class=cb></span>I ran the application / tests myself before delivery.</p>"
              "<p>Notes: <span class=line contenteditable>&nbsp;</span></p>"
              f"<p>Reviewer: <span class=line contenteditable>{e(ctx['author'] or '')}&nbsp;</span> &nbsp; Date: <span class=line contenteditable style='min-width:90pt'>&nbsp;</span></p></div>")
+    tools = ctx.get("tools", ["Claude Code"])
+    tl = e(" / ".join(tools))
+    li1 = (f"<li>Work requested: prompts typed by the developer in {tl} sessions for this repository. Requests are not proof of completion.</li>" if tools
+           else "<li>Work requested: not included (Git-only report; no AI session logs were read).</li>")
     o.append("<div class=two><div><h2 class=keep><span class=n>5</span>Basis of this report</h2><ul class='basis small'>"
-             "<li>Work requested: prompts typed by the developer in Claude Code sessions for this repository. Requests are not proof of completion.</li>"
+             + li1 +
              "<li>Changes delivered: commits from the repository history only. Session activity in other folders is excluded.</li>"
              "<li>Verification: commands as recorded in the logs; &ldquo;no error reported&rdquo; means the tool recorded no error, not that coverage was adequate.</li></ul></div>")
     total = sum(ctx["hits"].values())
     o.append("<div><h2><span class=n>6</span>Privacy</h2>")
     o.append(f"<p class='small keep'>Prompts and commands in this report were automatically scanned; {total} sensitive value(s) were masked "
              "(secrets, tokens, emails, home paths, IP addresses). Automatic redaction is best-effort. Read this report before sending it.</p>"
-             "<p class='small keep'>Prepared with AI-assisted development tools (Claude Code). Session logs and repository history are the source for this report.</p></div></div>")
+             + (f"<p class='small keep'>Prepared with AI-assisted development tools ({tl}). Session logs and repository history are the source for this report.</p></div></div>" if tools
+                else "<p class='small keep'>Prepared from repository (Git) history only; no AI session logs were used.</p></div></div>"))
     return "".join(o)
 
 
