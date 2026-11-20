@@ -12,3 +12,6 @@ Reports are built from a provider-independent activity model (see `providers.py`
 
 Defaults: only Claude Code is on; Codex and OpenCode are opt-in, so nothing is read from a tool the user did not enable. A failing adapter is counted in the skipped summary and never blocks other providers or the Git section.
 Projects discovered by several tools are merged by path.
+
+Attribution: every request in Private Evidence (developer report, Report Studio, Client-Safe request picker) shows its source tool. Client-Safe reports never include tool names or session metadata.
+Deduplication is deliberately narrow: two requests merge only if they come from different tools, have the same timestamp and have byte-identical text. The merged request keeps all sources (e.g. "Codex CLI + OpenCode"). Similar text, other times, or repeats inside one tool are never merged.

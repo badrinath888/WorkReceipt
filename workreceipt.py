@@ -478,7 +478,7 @@ h2 .n{color:var(--teal);margin-right:6pt}
 .lead{color:var(--mute);font-size:9pt;margin:2pt 0 5pt;break-after:avoid;page-break-after:avoid}
 .small{font-size:8.5pt;color:var(--mute)}
 .req{display:grid;grid-template-columns:20pt 1fr auto;gap:8pt;padding:3pt 0;border-bottom:1px solid #eef1f5;break-inside:avoid;page-break-inside:avoid}
-.req .no{color:var(--teal);font-weight:650;font-variant-numeric:tabular-nums}.req .dt{color:var(--mute);font-size:8.5pt;white-space:nowrap}
+.req .no{color:var(--teal);font-weight:650;font-variant-numeric:tabular-nums}.req .src{color:var(--mute);font-size:8pt;border:1px solid var(--line,#ddd);border-radius:8pt;padding:0 5pt;white-space:nowrap}.req .dt{color:var(--mute);font-size:8.5pt;white-space:nowrap}
 table{width:100%;border-collapse:collapse;font-size:9.5pt}
 thead{display:table-header-group}
 th{white-space:nowrap;text-align:left;font-size:8pt;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);font-weight:600;padding:4pt 6pt;border-bottom:1px solid var(--line)}
@@ -539,7 +539,7 @@ def render(ctx):
     if ctx["items"]:
         o.append("<p class='small noprint'>Titles below are editable in your browser before you print or save as PDF.</p>")
         for i, it in enumerate(ctx["items"], 1):
-            o.append(f"<div class=req><span class=no>{i}</span><span contenteditable>{e(it['title'])}</span><span class=dt>{e(it['date'])}</span></div>")
+            o.append(f"<div class=req><span class=no>{i}</span><span contenteditable>{e(it['title'])}</span>{f"<span class=src>{e(it['source'])}</span>" if it.get('source') else ''}<span class=dt>{e(it['date'])}</span></div>")
     else:
         o.append("<p>No session activity found in this period.</p>")
     o.append("<h2><span class=n>2</span>Changes delivered</h2>")

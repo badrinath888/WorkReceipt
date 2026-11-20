@@ -8,7 +8,7 @@ import client_safe as cs
 import providers
 import workreceipt as w
 
-VERSION = "0.6.1"
+VERSION = "0.7.0"
 
 
 def build_info():
@@ -607,14 +607,20 @@ def build(opts, settings=None):
             hits[(f["rule"], f["severity"])] += f["count"]
         return m
 
-    items = []
+    items, seen = [], {}
     for s_ in sessions:
         for p in s_["prompts"]:
-            items.append((p["ts"], p["text"]))
+            lab = providers.LABEL[s_["provider"]]
+            # Conservative dedup: same instant AND identical text AND a different tool. Repeats inside one tool, similar text or other times stay separate.
+            hit = seen.get((p["ts"], p["text"]))
+            if hit and lab not in hit[2]:
+                hit[2].append(lab)
+            else:
+                items.append((p["ts"], p["text"], [lab])); seen.setdefault((p["ts"], p["text"]), items[-1])
     items.sort(key=lambda x: x[0])
     work = []
-    for i, (ts, text) in enumerate(items):
-        work.append({"i": i, "key": _hid("r", ts.isoformat(), text), "title": w.first_line(mask("Work request", i, w.first_line(text, 10 ** 9), f"Request {i + 1}", ts.astimezone(w.LOCAL_TZ).strftime("%Y-%m-%d %H:%M"), 110)),
+    for i, (ts, text, srcs) in enumerate(items):
+        work.append({"source": " + ".join(srcs), "sources": srcs, "i": i, "key": _hid("r", ts.isoformat(), text), "title": w.first_line(mask("Work request", i, w.first_line(text, 10 ** 9), f"Request {i + 1}", ts.astimezone(w.LOCAL_TZ).strftime("%Y-%m-%d %H:%M"), 110)),
                      "date": ts.astimezone(w.LOCAL_TZ).strftime("%b %d")})
     checks = []
     cs = w.check_states(sessions)
