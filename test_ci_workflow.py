@@ -13,7 +13,7 @@ class CIWorkflow(unittest.TestCase):
         self.assertNotIn("|| true\n      - name: Full", W)
 
     def test_triggers_and_safety(self):
-        for s in ("pull_request:", "workflow_dispatch:", "branches: [main]", "feature/**"): self.assertIn(s, W)
+        for s in ("pull_request:", "workflow_dispatch:", "branches: [main]", "branches: [main, 'feature/**']", "push:"): self.assertIn(s, W)
         self.assertNotIn("pull_request_target", W)
         self.assertIn("permissions:\n  contents: read", W)
         self.assertNotIn("write", W.split("permissions:")[1].split("concurrency:")[0])
