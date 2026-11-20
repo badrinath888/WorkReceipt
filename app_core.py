@@ -5,9 +5,10 @@ from collections import Counter
 from datetime import datetime, timedelta
 
 import client_safe as cs
+import providers
 import workreceipt as w
 
-VERSION = "0.6.1"
+VERSION = "0.7.0"
 
 
 def build_info():
@@ -38,6 +39,8 @@ else:
     DEFAULT_OUT = os.path.join(os.path.expanduser("~"), "WorkReceipt Reports")
 DEFAULTS = {"claude_dir": os.environ.get("WORKRECEIPT_CLAUDE_DIR", os.path.expanduser("~/.claude")),
             "out_dir": DEFAULT_OUT,
+            "providers": {"claude": True, "codex": False, "opencode": False},       # AI tools to read; all off = Git-only reports
+            "codex_dir": os.path.expanduser("~/.codex"), "opencode_dir": os.path.expanduser("~/.local/share/opencode"),
             "author": "", "client": "", "theme": "system", "redact_terms": [],
             "projects": [], "hidden": [], "onboarded": False, "demo": False, "settings_version": 2}
 
@@ -74,6 +77,10 @@ def save_settings(new):
     s["redact_terms"] = [t.strip() for t in s["redact_terms"] if str(t).strip()][:50]
     for k in ("projects", "hidden"):
         s[k] = [x for x in (s[k] if isinstance(s[k], list) else []) if isinstance(x, str) and x][:200]
+    pv = s["providers"] if isinstance(s["providers"], dict) else {}
+    s["providers"] = {k: bool(pv.get(k)) for k in providers.LOADERS}
+    for k in ("codex_dir", "opencode_dir"):
+        s[k] = s[k] if isinstance(s[k], str) and s[k] else DEFAULTS[k]
     s["onboarded"], s["demo"] = bool(s["onboarded"]), bool(s["demo"])
     os.makedirs(_home(), exist_ok=True)
     with open(os.path.join(_home(), "settings.json"), "w", encoding="utf-8") as f:
@@ -190,7 +197,21 @@ def _norm(p):
 
 def all_projects(s):
     """Claude-discovered projects + demo + folders the user added, minus ones the user removed from WorkReceipt."""
-    ps = discover(s["claude_dir"])
+    ps = discover(s["claude_dir"]) if providers.enabled(s).count("claude") else []
+    for prov in providers.enabled(s):
+        if prov == "claude":
+            continue
+        for cwd, mt in providers.discover(prov, s[providers.DIR_KEY[prov]]):
+            q = next((x for x in ps if _norm(x["path"]) == _norm(cwd)), None)
+            if q is None:
+                ex = os.path.isdir(cwd)
+                q = {"path": cwd, "name": os.path.basename(cwd.rstrip("/\\")) or cwd, "sessions": 0, "last": "", "mtimes": [], "exists": ex,
+                     "git": ex and w.git(cwd, "rev-parse", "--git-dir") is not None}
+                ps.append(q)
+            q["sessions"] += 1
+            q["mtimes"].append(mt)
+            q["last"] = max(q["last"], datetime.fromtimestamp(mt).strftime("%Y-%m-%d %H:%M"))
+            q.setdefault("providers", []).append(prov) if prov not in q.get("providers", []) else None
     if s.get("demo"):
         for p in discover(os.path.join(demo_dir(), "claude")):
             p["demo"] = True
@@ -572,7 +593,7 @@ def build(opts, settings=None):
     since, until = _dates(opts.get("since") or "", opts.get("until") or "")
     terms = _terms(s, opts)
     skipped = Counter()
-    sessions, _pdir = w.load_sessions(_claude_dir_for(repo, s), repo, since, until, skipped)
+    sessions = providers.load_all(s, repo, since, until, skipped, _claude_dir_for(repo, s))
     g = w.git_summary(repo, since, until, opts.get("git_author") or None)
     is_git = g is not None
     commits, files, ins, dele, n_auth = g or ([], Counter(), 0, 0, 0)
@@ -586,14 +607,20 @@ def build(opts, settings=None):
             hits[(f["rule"], f["severity"])] += f["count"]
         return m
 
-    items = []
+    items, seen = [], {}
     for s_ in sessions:
         for p in s_["prompts"]:
-            items.append((p["ts"], p["text"]))
+            lab = providers.LABEL[s_["provider"]]
+            # Conservative dedup: same instant AND identical text AND a different tool. Repeats inside one tool, similar text or other times stay separate.
+            hit = seen.get((p["ts"], p["text"]))
+            if hit and lab not in hit[2]:
+                hit[2].append(lab)
+            else:
+                items.append((p["ts"], p["text"], [lab])); seen.setdefault((p["ts"], p["text"]), items[-1])
     items.sort(key=lambda x: x[0])
     work = []
-    for i, (ts, text) in enumerate(items):
-        work.append({"i": i, "key": _hid("r", ts.isoformat(), text), "title": w.first_line(mask("Work request", i, w.first_line(text, 10 ** 9), f"Request {i + 1}", ts.astimezone(w.LOCAL_TZ).strftime("%Y-%m-%d %H:%M"), 110)),
+    for i, (ts, text, srcs) in enumerate(items):
+        work.append({"source": " + ".join(srcs), "sources": srcs, "i": i, "key": _hid("r", ts.isoformat(), text), "title": w.first_line(mask("Work request", i, w.first_line(text, 10 ** 9), f"Request {i + 1}", ts.astimezone(w.LOCAL_TZ).strftime("%Y-%m-%d %H:%M"), 110)),
                      "date": ts.astimezone(w.LOCAL_TZ).strftime("%b %d")})
     checks = []
     cs = w.check_states(sessions)
@@ -616,7 +643,7 @@ def build(opts, settings=None):
                period=f"{opts.get('since') or 'start'} → {opts.get('until') or 'today'}", author=author,
                generated=datetime.now().strftime("%Y-%m-%d %H:%M"), items=work, n_items=len(work), commits=cm,
                n_commits=len(cm), n_files=len(files), ins=ins, dele=dele, n_authors=n_auth, dirs=dirs.most_common(),
-               git_filtered=bool(opts.get("git_author")), checks=checks, hits=hits)
+               tools=sorted({providers.LABEL[x["provider"]] for x in sessions}), git_filtered=bool(opts.get("git_author")), checks=checks, hits=hits)
     dup = Counter(d["vsig"] for f in uniq for d in f["detections"] if d["vsig"])
     for f in uniq:
         for d in f["detections"]:
