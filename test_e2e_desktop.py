@@ -3,11 +3,22 @@ A FakeNative host on workreceipt_app.NATIVE stands in for the macOS window (the 
 import json, os, shutil, subprocess, sys, tempfile, threading, unittest
 from http.server import ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-CHROME = next((c for c in ("/usr/bin/google-chrome", "/usr/bin/chromium") if os.path.exists(c)), None)
+CHROME = next((c for c in (os.environ.get("WR_CHROME"), "/usr/bin/google-chrome", "/usr/bin/chromium", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome") if c and os.path.exists(c)), None)
 try:
     from playwright.sync_api import sync_playwright
 except ImportError:
     sync_playwright = None
+
+
+SELECT_ALL = "Meta+A" if sys.platform == "darwin" else "Control+A"      # on macOS Ctrl+A moves the caret to the line start; only Cmd+A selects everything
+
+
+def settle(pg, native, k, ms=8000):
+    """A click returns before the page's fetch to the (stub) native host has arrived; wait until the host has seen k calls instead of racing it."""
+    waited = 0
+    while len(native.calls) < k and waited < ms:
+        pg.wait_for_timeout(50); waited += 50
+    return native.calls
 
 
 @unittest.skipUnless(sync_playwright and CHROME, "playwright/Chrome not available")
@@ -84,9 +95,11 @@ class E2E(unittest.TestCase):
         pg = self.page(); pg.goto(self.url + "#projects"); pg.wait_for_selector("tr[data-pick]")
         pg.click("tr[data-pick]:has-text('acme-storefront')"); pg.click("#load")
         pg.wait_for_selector(".callout.ok:has-text('Loaded')", timeout=60000)
-        pg.click(".tab[data-go=studio]"); pg.wait_for_selector("[data-req]")
-        el = pg.locator("[data-req]").first; el.click(); el.press("Control+A"); el.type("Edited by user")
-        pg.click(".tab[data-go=overview]"); pg.click(".tab[data-go=reports]"); pg.click(".tab[data-go=studio]")
+        pg.click(".tab[data-go=studio]"); pg.click("#mode-private"); pg.wait_for_selector("[data-req]")
+        el = pg.locator("[data-req]").first; original = el.inner_text(); el.click(); el.press(SELECT_ALL)
+        self.assertEqual(pg.evaluate("getSelection().toString().trim()"), original.strip(), "the select-all key did not select the whole item (keyboard modifier is platform specific)")
+        el.type("Edited by user")
+        pg.click(".tab[data-go=overview]"); pg.click(".tab[data-go=reports]"); pg.click(".tab[data-go=studio]"); pg.click("#mode-private")
         self.assertEqual(pg.locator("[data-req]").first.inner_text(), "Edited by user")        # edits survive navigation
         pg.click("#preview"); pg.wait_for_selector("iframe.frame")
         self.assertNotIn("AKIAQWERTYUIOPASDFGH", pg.content())
@@ -99,7 +112,7 @@ class E2E(unittest.TestCase):
             r = pg.locator("[data-review]:not(:has-text('Change'))")
             if r.count() == 0: break
             r.first.click(); pg.check("input[value=unsure]"); pg.check("#ack"); pg.click("#confirmrev")
-        pg.click(".tab[data-go=studio]"); pg.click("#export"); pg.wait_for_selector(".xcard.ok:has-text('Exported')", timeout=60000)
+        pg.click(".tab[data-go=studio]"); pg.click("#mode-private"); pg.click("#export"); pg.wait_for_selector(".xcard.ok:has-text('Exported')", timeout=60000)
         files = os.listdir(os.path.join(self.root, "out"))
         html = open(os.path.join(self.root, "out", next(f for f in files if f.endswith(".html")))).read()
         self.assertIn("Edited by user", html); self.assertNotIn("AKIA", html)
@@ -145,6 +158,21 @@ class E2E(unittest.TestCase):
     def saved(self):
         with open(os.path.join(self.core._home(), "settings.json")) as f:
             return json.load(f)
+
+    def test_onboarding_finish_is_saved_before_the_dialog_closes(self):
+        """Regression (macOS run: 'Onboarding/Finish setup: False is not true'): the dialog used to close first and save afterwards, so anything that
+        looked at the stored settings the moment the dialog was gone saw onboarded=false. A slow save makes the old order fail every time."""
+        import time
+        self.core.save_settings({"onboarded": False}); self.native(); real = self.core.save_settings
+
+        def slow(data):
+            time.sleep(0.7); return real(data)
+        self.core.save_settings = slow; self.addCleanup(setattr, self.core, "save_settings", real)
+        pg = self.page(); pg.goto(self.url + "?shell=desktop"); pg.wait_for_selector("#obnext"); pg.click("#obnext"); pg.click("#obnext")
+        pg.click("#obskip")
+        pg.wait_for_selector(".ob", state="detached")
+        self.assertTrue(self.saved()["onboarded"], "the dialog closed before the setting was stored")
+        pg.close()
 
     def test_6_picker_waits_for_host_then_populates_and_persists(self):
         d1, d2 = os.path.join(self.root, "claude-picked"), os.path.join(self.root, "reports-picked"); os.makedirs(d1); os.makedirs(d2)
@@ -227,13 +255,13 @@ class E2E(unittest.TestCase):
 
     def test_b_open_and_reveal_send_names_only_and_show_errors(self):
         n = self.native(); pg = self.page(); self.load_demo(pg, "?shell=desktop"); self.review_all(pg)
-        pg.click(".tab[data-go=studio]"); pg.click("#export"); pg.wait_for_selector(".xcard.ok:has-text('Exported')", timeout=60000)
+        pg.click(".tab[data-go=studio]"); pg.click("#mode-private"); pg.click("#export"); pg.wait_for_selector(".xcard.ok:has-text('Exported')", timeout=60000)
         pg.click(".xcard [data-open][data-kind=html]"); pg.click(".xcard [data-showfile]")
-        calls = n.calls; self.assertEqual([c[0] for c in calls], ["open", "reveal"])
+        calls = settle(pg, n, 2); self.assertEqual([c[0] for c in calls], ["open", "reveal"])
         for c in calls: self.assertTrue(c[1].endswith((".html", ".pdf")) and "/" not in c[1] and "\\" not in c[1], c)
         n.res = {"ok": False, "error": "That report file no longer exists. It may have been moved or deleted"}   # simulate backend refusal
         pg.click(".xcard [data-open][data-kind=html]"); pg.wait_for_selector("#toast.on:has-text('no longer exists')")
-        pg.click(".tab[data-go=reports]"); pg.click("[data-open]"); pg.click("[data-showfile]"); self.assertEqual(len(n.calls), 5)
+        pg.click(".tab[data-go=reports]"); pg.click("[data-open]"); pg.click("[data-showfile]"); self.assertEqual(len(settle(pg, n, 5)), 5)
         self.assertEqual(self.errs, []); pg.close()
 
     def test_c_theme_icon_pills_overview_refresh_preview_settings(self):
@@ -251,7 +279,7 @@ class E2E(unittest.TestCase):
         pg.click(".tab[data-go=overview]")                                                      # overview refresh picks up changes made outside the page
         n = int(pg.inner_text(".stat .v").strip()); extra = os.path.join(self.root, "refresh-me"); os.makedirs(extra); self.core.add_project(extra)
         pg.click("#refresh"); pg.wait_for_function("n=>parseInt(document.querySelector('.stat .v').textContent)===n+1", arg=n)
-        pg.click(".tab[data-go=studio]"); pg.click("#preview"); pg.wait_for_selector("iframe.frame")      # preview opens at the top after scrolling away
+        pg.click(".tab[data-go=studio]"); pg.click("#mode-private"); pg.click("#preview"); pg.wait_for_selector("iframe.frame")      # preview opens at the top after scrolling away
         pg.mouse.move(600, 400); pg.mouse.wheel(0, 3000); pg.wait_for_timeout(300); pg.mouse.wheel(0, -4000); pg.wait_for_timeout(300)
         pg.click("#preview"); pg.wait_for_timeout(500)
         top = pg.evaluate("document.querySelector('.frame').closest('.card').getBoundingClientRect().top")
@@ -297,7 +325,7 @@ class ExportCard(unittest.TestCase):
     page, native, load_demo, review_all, saved = E2E.page, E2E.native, E2E.load_demo, E2E.review_all, E2E.saved
 
     def go_studio(self, pg, q="?shell=desktop"):
-        self.load_demo(pg, q); self.review_all(pg); pg.click(".tab[data-go=studio]")
+        self.load_demo(pg, q); self.review_all(pg); pg.click(".tab[data-go=studio]"); pg.click("#mode-private")
 
     def respond(self, pg, status, body):
         import json as _j
@@ -320,7 +348,7 @@ class ExportCard(unittest.TestCase):
         self.assertEqual(os.path.basename(h["pdf"]), pn); self.assertTrue(os.path.isfile(h["html"]) and os.path.isfile(h["pdf"]))   # files really exist
         self.assertEqual(open(h["pdf"], "rb").read(5), b"%PDF-")
         pg.click(".xcard [data-open][data-kind=pdf]"); pg.click(".xcard [data-open][data-kind=html]"); pg.click(".xcard [data-showfile]")
-        self.assertEqual([(c[0], c[2]) for c in n.calls], [("open", "pdf"), ("open", "html"), ("reveal", "pdf")])
+        settle(pg, n, 3); self.assertEqual([(c[0], c[2]) for c in n.calls], [("open", "pdf"), ("open", "html"), ("reveal", "pdf")])
         self.assertTrue(all(c[1] == os.path.basename(h["pdf"] if c[2] == "pdf" else h["html"]) for c in n.calls))               # names only, never paths
         pg.close()
 
@@ -333,7 +361,7 @@ class ExportCard(unittest.TestCase):
         self.assertEqual(pg.locator(".xcard [data-kind=pdf][data-open]").count(), 0)
         self.assertEqual(pg.locator(".xcard .xact .btn").all_inner_texts(), ["Open HTML", "Show in Finder"])
         self.assertFalse(pg.locator(".xd").evaluate("e=>e.open")); pg.click(".xd summary"); self.assertIn("…", pg.inner_text(".xd")); self.assertNotIn("/Users", pg.inner_text(".xcard"))
-        pg.click(".xcard [data-open]"); pg.wait_for_timeout(300); self.assertEqual(n.calls[-1][:2], ("open", "acme-2026.html")); pg.close()
+        k = len(n.calls); pg.click(".xcard [data-open]"); settle(pg, n, k + 1); self.assertEqual(n.calls[-1][:2], ("open", "acme-2026.html")); pg.close()
 
     def test_failure_state_offers_retry_and_no_file_actions(self):
         self.native(); pg = self.page(); self.go_studio(pg)
@@ -351,5 +379,5 @@ class ExportCard(unittest.TestCase):
     def test_unresolved_findings_still_block_export(self):
         self.native(); before = len(self.core.history()); pg = self.page(); self.core.enable_demo(); self.core.save_settings({"onboarded": True}); pg.goto(self.url + "?shell=desktop#projects")
         pg.wait_for_selector("tr[data-pick]"); pg.click("tr[data-pick]:has-text('acme-storefront')"); pg.click("#load"); pg.wait_for_selector(".callout.ok:has-text('Loaded')", timeout=60000)
-        pg.click(".tab[data-go=studio]"); pg.click("#export"); pg.wait_for_selector(".tab[data-go=privacy][aria-current=page]")
+        pg.click(".tab[data-go=studio]"); pg.click("#mode-private"); pg.click("#export"); pg.wait_for_selector(".tab[data-go=privacy][aria-current=page]")
         self.assertEqual(len(self.core.history()), before); self.assertEqual(pg.locator(".xcard.ok,.xcard.warn").count(), 0); pg.close()

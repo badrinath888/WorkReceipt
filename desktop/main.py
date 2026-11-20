@@ -54,7 +54,7 @@ class Native:
         except Exception as e:
             return {"available": False, "reason": "pywebview could not be imported: " + type(e).__name__}
         return {"available": self._window is not None and self._ready.is_set(), "window": self._window is not None, "shown": self._ready.is_set(),
-                "pywebview": ver, "platform": sys.platform, "python": platform.python_version(), "version": core.VERSION}
+                "pywebview": ver, "platform": sys.platform, "python": platform.python_version(), "version": core.VERSION, "build": core.build_info()}
 
     def pick_folder(self, start=None):
         """-> {ok, path|None, cancelled} or {ok: False, error}. One dialog at a time."""
@@ -139,11 +139,38 @@ def _drop_handler(win):
         pass            # drag-and-drop is optional; Add project always works
 
 
-def main():
-    import webview
+def install_native_backends():
+    """macOS: PDF export through system WebKit and Client-Safe verification through PDFKit. Shared with scripts/macos_native.py so the
+    automated validation exercises exactly the wiring the app uses. No-op elsewhere (Chrome / poppler fallbacks apply)."""
     if sys.platform == "darwin":
         from desktop import pdf_mac
         core.PDF_BACKEND = pdf_mac.render_pdf        # packaged PDF export: system WebKit, no Chrome required
+        core.PDF_INSPECTOR = pdf_mac.extract_facts    # Client-Safe Mode: PDFKit reads the finished PDF back before it is shared
+        return True
+    return False
+
+
+def print_build_info(argv):
+    """`WorkReceipt --build-info [FILE]`: print (and, if FILE is given, write) which source this build came from, then exit without opening a window.
+    The validation harness runs this on dist/WorkReceipt.app so a stale build is caught before it is launched."""
+    import json
+    text = json.dumps(core.build_info())
+    i = argv.index("--build-info")
+    if i + 1 < len(argv) and not argv[i + 1].startswith("-"):
+        with open(argv[i + 1], "w", encoding="utf-8") as f:
+            f.write(text)
+    try:
+        print(text)
+    except Exception:                                      # noqa: BLE001  (a windowed bundle may have no stdout)
+        pass
+    return 0
+
+
+def main():
+    if "--build-info" in sys.argv:
+        return print_build_info(sys.argv)
+    import webview
+    install_native_backends()
     srv, url = start_server()
     atexit.register(lambda: stop_server(srv))
     nat = Native()

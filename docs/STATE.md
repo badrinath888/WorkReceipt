@@ -65,3 +65,26 @@ NOT tested: any macOS run, real pywebview/WKWebView window (bridge only stubbed)
 - Fix: `alloc().initWithURL_`; verifier failures fall back to a byte-level page/MediaBox check; a verifier that cannot run => "unverified", never a rejection. Only positive defects (bad signature, wrong page size, clipped text, no text) reject. `pdf-last-diag.txt` (flags only) written every attempt; core re-validates the PDF signature for every backend.
 - UI: compact export card with success / partial (warning, no PDF actions, optional technical details) / failure (retry) states, file names only, no paths.
 - Not verified on macOS. See MAC_VALIDATION.md Round 5.
+
+
+## v0.6.0 — Client-Safe Mode
+- See docs/CLIENT_SAFE_MODE.md. New `client_safe.py`, `/api/client/*`, Report Studio client flow (default), developer reports marked PRIVATE, history records carry `mode`.
+- 295 tests pass on Linux (229 baseline + 66 new). NOT verified on macOS (MAC_VALIDATION.md Round 6).
+
+
+## Automated macOS validation
+- `scripts/validate_macos.sh`: one command, sandboxed, PASS/FAIL report with exit codes. See docs/MACOS_AUTOMATED_VALIDATION.md for stages and what ran where.
+- Linux `--selftest` passes (304 tests + harness logic; labelled not-macOS evidence). macOS-only stages (WKWebView PDF, PDFKit, live app launch) are written but unexecuted until run on a Mac.
+- Fixed: Settings text typed while a folder save was in flight was wiped by the re-render (surfaced as a flaky audit test).
+
+- First Mac run: 5 stage failures traced (see MACOS_AUTOMATED_VALIDATION.md): PDF metadata rule rejected an absent Creator (fixed, narrowly), live-app approval was a harness defect (per-process finding ids), plus test races and unreported skips. 314 tests pass on Linux. macOS re-run pending.
+
+
+## v0.6.1 — second Mac run repair
+- Fixes for the second macOS run (see MACOS_AUTOMATED_VALIDATION.md): PDF metadata read from file bytes as well as the extractor, build fingerprint to catch stale packaged apps, footer-token tolerance for the pypdf path, onboarding saves before closing, platform select-all key in tests, poppler/PDF-security release gate.
+- 349 tests pass on Linux (323 + 26 expected skips with poppler hidden). macOS re-run pending; native validation is NOT passed.
+
+
+## v0.6.1 — third Mac run repair
+- PyObjC reload failure: tests no longer snapshot-restore `sys.modules` (see MACOS_AUTOMATED_VALIDATION.md). Creator "WorkReceipt" (exact) accepted; safe metadata diagnostics added; independent Creator/Producer check made strict.
+- Linux: 370 passed (default, class-reversed and two class-shuffled orders); 344 passed + 26 expected skips with poppler hidden (two orders). Two intermittent UI failures seen across runs (one per round) did not reproduce on rerun and are not explained. macOS re-run pending; native validation is NOT passed.

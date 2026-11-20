@@ -82,7 +82,7 @@ class H(BaseHTTPRequestHandler):
         for p in projects:
             p.pop("mtimes", None)
         self._json(200, {"settings": s, "projects": projects, "weekly": wk, "history": core.history()[::-1],
-                         "version": core.VERSION, "home": core._home(), "chrome": core.pdf_available(), "git_ok": core.git_ok(), "claude_dir_ok": os.path.isdir(os.path.join(s["claude_dir"], "projects"))})
+                         "version": core.VERSION, "build": core.build_info(), "home": core._home(), "chrome": core.pdf_available(), "git_ok": core.git_ok(), "claude_dir_ok": os.path.isdir(os.path.join(s["claude_dir"], "projects"))})
 
     def _native(self, op, data):
         """Native macOS actions over the same local, token-protected channel as everything else (no dependence on the WebView JS bridge)."""
@@ -121,6 +121,14 @@ class H(BaseHTTPRequestHandler):
             if self.path == "/api/export":
                 r = core.export(data, data.get("approved"), data.get("titles"))
                 r.pop("html", None)
+                return self._json(200 if r.get("ok") else 409, r)
+            if self.path == "/api/client/preview":
+                return self._json(200, core.client_preview(data, data.get("draft"), data.get("approved")))
+            if self.path == "/api/client/approve":
+                r = core.client_approve(data, data.get("draft"), data.get("approved"), data.get("confirm"))
+                return self._json(200 if r.get("ok") else 409, r)
+            if self.path == "/api/client/export":
+                r = core.client_export(data, data.get("draft"), data.get("approved"), data.get("token"), bool(data.get("pdf")))
                 return self._json(200 if r.get("ok") else 409, r)
             if self.path == "/api/reveal":
                 # Local-only, one value, only on an explicit confirmed request. Never cached, never logged.

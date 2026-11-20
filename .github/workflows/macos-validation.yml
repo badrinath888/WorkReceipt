@@ -1,0 +1,82 @@
+name: macos-validation
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: ['feature/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read   # read-only token; pull_request (not pull_request_target) so forks get no secrets
+
+concurrency:
+  group: macos-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    # macos-latest = Apple Silicon with a logged-in GUI session, which the WKWebView/PDFKit/app-launch stages need. (macos-14 was rejected for this repo.)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install Poppler and locate Chrome
+        run: |
+          brew list poppler >/dev/null 2>&1 || brew install poppler
+          CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+          [ -x "$CHROME" ] || { brew install --cask google-chrome; }
+          [ -x "$CHROME" ] || { echo "::error::Chrome not found"; exit 1; }
+          echo "WR_CHROME=$CHROME" >> "$GITHUB_ENV"
+          echo "PYTHON=$(which python3)" >> "$GITHUB_ENV"
+
+      - name: Verify PyObjC, PDFKit and WKWebView
+        run: |
+          python3 -m pip install -q "pywebview>=5.3,<6" pyobjc-framework-Quartz pyobjc-framework-WebKit
+          python3 -c "import objc, Quartz, WebKit; Quartz.PDFDocument; WebKit.WKWebView; print('PyObjC/PDFKit/WKWebView OK')"
+          which pdftotext pdfinfo pdftoppm
+
+      - name: Full native validation
+        id: validate
+        run: ./scripts/validate_macos.sh --rebuild --keep
+
+      - name: Collect sanitized diagnostics
+        if: always()
+        run: |
+          # Only synthetic-sandbox output is collected: the report, result rows, junit and logs. Never ~/.claude, app data or real reports.
+          D=ci-artifacts; mkdir -p "$D"
+          cp validation-results/*.txt "$D"/ 2>/dev/null || true
+          for s in "${TMPDIR:-/tmp}"/wr-validate.*; do [ -d "$s" ] && cp -R "$s/logs" "$s/results.jsonl" "$s/junit.xml" "$D"/ 2>/dev/null; done
+          {
+            echo "commit: $GITHUB_SHA"
+            echo "runner: $(sw_vers -productName) $(sw_vers -productVersion) $(uname -m), image ${ImageVersion:-unknown}"
+            echo "reproduce locally: ./scripts/validate_macos.sh --rebuild --keep"
+          } > "$D/context.txt"
+          {
+            echo "## macOS validation"
+            cat "$D/context.txt" | sed 's/^/- /'
+            echo '```'
+            cat "$D"/macos-validation-*.txt 2>/dev/null | head -n 120 || echo "no report produced (setup failed before the report stage)"
+            echo '```'
+            echo "Exit codes: 0 PASS, 1 required check failed, 2 incomplete/blocked (both fail this job)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: macos-validation-${{ github.run_id }}
+          path: ci-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop leftover app processes
+        if: always()
+        run: pkill -f "WorkReceipt.app" || true

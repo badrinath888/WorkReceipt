@@ -30,8 +30,22 @@ class PdfError(RuntimeError):
         self.stage, self.reason = stage, reason
 
 
+def _stamp_creator():
+    """The print job stamps the host bundle's CFBundleName as PDF Creator. Packaged, that is already the product name; a script run
+    hosted by Python.app would stamp 'Python', which Client-Safe Mode rightly refuses. Set the fixed product name in memory (nothing is
+    written to disk, nothing comes from input). Best effort: if the dictionary is read-only the PDF keeps its default and the validator decides."""
+    try:
+        from Foundation import NSBundle
+        from client_safe import PRODUCT_NAME
+        info = NSBundle.mainBundle().infoDictionary()
+        info["CFBundleName"] = PRODUCT_NAME
+    except Exception:                                                # noqa: BLE001
+        pass
+
+
 def render_pdf(html, out_path, timeout=TIMEOUT):
     """Callable from any thread. Returns None on success; raises PdfError otherwise."""
+    _stamp_creator()
     try:
         from PyObjCTools import AppHelper
     except Exception as e:                                           # noqa: BLE001
@@ -121,6 +135,24 @@ def inspect_pdf(path):
     except Exception as e:                                           # noqa: BLE001
         d["verifier"] = "unverified"; d["exc"] = d["exc"] or type(e).__name__
     return d
+
+
+def extract_facts(path):
+    """Facts for Client-Safe Mode's final PDF check, read with PDFKit: extractable text, document metadata, annotation count.
+    Returns None when PDFKit cannot read the file; the caller then treats the PDF as UNVERIFIED and blocks the export."""
+    try:
+        from Quartz import PDFDocument
+        doc = PDFDocument.alloc().initWithURL_(_url(path))
+        if doc is None or doc.pageCount() < 1:
+            return None
+        attrs = doc.documentAttributes() or {}
+        meta = {k: str(attrs.get(k) or "") for k in ("Title", "Author", "Subject", "Keywords", "Creator", "Producer")}
+        notes = sum(len(doc.pageAtIndex_(i).annotations() or []) for i in range(int(doc.pageCount())))
+        with open(path, "rb") as f:
+            raw = f.read()
+        return {"text": str(doc.string() or ""), "meta": meta, "annotations": notes, "attachments": raw.count(b"/EmbeddedFile")}
+    except Exception:                                                # noqa: BLE001
+        return None
 
 
 def _write_diag(d):

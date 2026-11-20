@@ -15,7 +15,7 @@ const TABS = [["overview", "Overview"], ["projects", "Projects"], ["studio", "Re
 const ICON = { overview: "grid", projects: "folder", studio: "doc", privacy: "shield", reports: "lib", settings: "gear" };
 
 const S = { tab: "overview", ob: null, q: "", rf: "", rt: "", busy: "", data: null, repo: "", since: "", until: "", client: "", author: "", gitAuthor: "", terms: [], prev: null,
-  titles: {}, disp: {}, open: new Set(), dlg: null, showCleared: false, loading: false, err: "", html: null, exporting: false, lastExport: null, exportFail: "", repoDraft: null };
+  titles: {}, disp: {}, mode: "client", cr: null, open: new Set(), dlg: null, showCleared: false, loading: false, err: "", html: null, exporting: false, lastExport: null, exportFail: "", repoDraft: null };
 
 async function api(path, body) {
   const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "X-WR-Token": TOKEN, "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -95,6 +95,14 @@ function dialogHTML() {
   const g = S.dlg; if (!g) return "";
   if (g.kind === "delrep") return `<div class="ovl" role="alertdialog" aria-modal="true" aria-label="Delete report"><div class="dlgbox"><h3>Delete this report?</h3><p class="note">The exported HTML and PDF files are removed from disk. This cannot be undone.</p><div class="dact"><button class="btn dark" id="confirmdel">Delete report</button><button class="btn" data-close="1">Cancel</button></div></div></div>`;
   if (g.kind === "rmproj") return `<div class="ovl" role="alertdialog" aria-modal="true" aria-label="Remove project"><div class="dlgbox"><h3>Remove from WorkReceipt?</h3><p class="note">The project is only hidden here. Its folder, Git history and Claude Code logs are not changed or deleted.</p><div class="dact"><button class="btn dark" id="confirmdel">Remove project</button><button class="btn" data-close="1">Cancel</button></div></div></div>`;
+  if (g.kind === "crreview") { const r = S.cr.res; if (!r || !r.html) return "";
+    return `<div class="ovl" role="dialog" aria-modal="true" aria-labelledby="crt"><div class="dlgbox" style="max-width:580px"><h3 id="crt">Review sharing</h3>
+    <p class="note">This is exactly what the exported HTML and PDF will contain (fingerprint <span class="mono">${esc(r.content_hash.slice(0, 8))}</span>). Changing anything afterwards clears this approval.</p>
+    <dl class="manifest">${r.manifest.map(m => `<div><dt>${esc(m.label)}</dt><dd>${esc(m.value)}</dd></div>`).join("")}</dl>
+    <p class="note"><b>Never exported:</b> ${(r.excluded || CR_EXCLUDED).map(esc).join("; ")}.</p>
+    <div class="ack"><div class="ack-h">Required confirmation</div><p class="note">Automatic checks cannot know what is confidential to your client. They are a safety net, not a guarantee.</p>
+      <label class="ropt"><input type="checkbox" id="crack" ${g.ack ? "checked" : ""}><span>I have read the client preview in full. It contains nothing my client has not agreed to receive, and I approve exactly this content for sharing.</span></label></div>
+    <div class="dact split"><button class="btn cancel" data-close="1">Cancel</button><button class="btn dark" id="crconfirm" ${g.ack ? "" : "disabled"}>Approve for sharing</button></div></div></div>`; }
   const d = highD().find(x => x.id === g.id); if (!d) return "";
   if (g.kind === "reveal") return `<div class="ovl" role="dialog" aria-modal="true" aria-label="Reveal value"><div class="dlgbox"><h3>Original value</h3><p class="note">${esc(d.where)}, line ${d.line}. Shown only on this screen, only for this detection. It is not logged, stored or sent anywhere, and hides itself in 20 seconds.</p>
     ${g.value == null ? (g.err ? `<p class="note">${esc(g.err)}</p>` : '<p class="note">Loading…</p>') : '<pre class="revealed" id="rv"></pre>'}<div class="dact"><button class="btn dark" data-close="1">Hide and close</button></div></div></div>`;
@@ -216,12 +224,15 @@ function exportCard() {
   const det = partial && X.pdf_error ? `<details class="xd"><summary>View technical details</summary><p class="mono">${esc(shortErr(X.pdf_error))}</p></details>` : "";
   return `<div class="xcard ${st}" role="status"><div class="xh"><span class="xdot"></span><b>${title}</b></div><p class="xs">${sub}</p><div class="xfiles">${files}</div><div class="xact">${acts}</div>${det}</div>`;
 }
-function vStudio() {
+function vStudio() { return !S.prev || S.mode === "private" ? vStudioPrivate() : vClient(); }
+function vStudioPrivate() {
   const P = S.prev;
   if (!P) return `<div><div class="ph"><div><h2>Report Studio</h2><p>Edit work descriptions, check the evidence and export.</p></div></div><div class="card"><div class="empty"><b>No activity loaded</b>Choose a project and load its activity to start a report.<br><button class="btn dark" data-go="projects">Choose a project</button></div></div></div>`;
   const cs = P.check_stats, pend = pendingHigh().length, nTitles = Object.keys(S.titles).length;
   return `<div><div class="ph"><div><h2>Report Studio <span class="chip">${esc(P.project)}</span></h2><p>${esc(P.period)} · Git is the evidence of delivered changes; requests are not proof of completion.</p></div>
-    <div class="act"><button class="btn" id="preview">${S.html ? "Refresh preview" : "Preview"}</button><button class="btn dark" id="export" ${S.exporting ? "disabled" : ""}>${ic("dl")} Export report</button></div></div>
+    <div class="act"><button class="btn" id="preview">${S.html ? "Refresh preview" : "Preview"}</button><button class="btn dark" id="export" ${S.exporting ? "disabled" : ""}>${ic("dl")} Export developer report</button></div></div>
+  ${modeSwitch()}
+  <div class="callout"><div><span class="badge bad">PRIVATE</span> <b>Developer View.</b> This view and its export include your prompts, commit messages and commands. Do not send them to a client. Use the Client-Safe Report for anything you share.</div></div>
   ${pend ? `<div class="callout"><div><b>${pend} high-severity masked value${pend > 1 ? "s" : ""} not reviewed yet.</b> Export unlocks after you review each one in the <a href="#privacy" data-go="privacy" style="color:var(--teal);font-weight:500">Privacy Center</a>.</div></div>` : ""}
   ${exportCard()}
   <div class="grid g4">
@@ -238,6 +249,146 @@ function vStudio() {
       <div class="list">${P.checks.slice(-5).reverse().map(c => `<div class="row"><div class="grow"><div class="t mono" title="${esc(c.cmd)}">${esc(c.cmd.slice(0, 70))}</div><div class="s">${esc(c.date)}${c.state === "edited" ? " · edited after, not re-run" : c.state === "superseded" ? " · re-run later" : ""}</div></div><span class="badge ${c.ok === true ? "ok" : c.ok === false ? "bad" : ""}">${c.ok === true ? "no error" : c.ok === false ? "failed" : "no result"}</span></div>`).join("")}</div>` : `<div class="empty" style="padding:14px"><b>No checks recorded</b>Test, lint or build commands appear here.</div>`}</div></div></div>
   <div class="card sec"><h3>Report preview <span class="chip">masked</span></h3>${S.html ? `<iframe class="frame" sandbox="allow-same-origin" title="Report preview" srcdoc="${esc(S.html)}"></iframe><p class="note" style="margin-top:8px">${S.data.chrome ? "Export also creates a PDF." : "PDF export is not available here; the HTML export always works and can be printed to PDF."}</p>` : `<div class="empty"><b>Preview not generated</b>Preview shows exactly what will be exported, after masking.<br><button class="btn" id="preview2">Generate preview</button></div>`}</div></div>`;
 }
+
+/* ---------- Client-Safe Report ---------- */
+/* Everything the client report contains is typed or approved here by the developer. The server builds the report from this draft
+   (allowlisted fields only) and from nothing else; unapproved items are never sent. */
+function newCR() { return { project: "", client: "", showPrep: false, prep: "", items: [], vmode: "none", vtext: "", res: null, token: null, hash: null, busy: "", cleared: false, pdf: true, nid: 1, ev: new Set() }; }
+S.cr = newCR();
+const CR_EXCLUDED = ["Source code and diffs", "Your prompts and the AI's responses", "Terminal commands and their output", "Git commit messages and commit ids", "File names, folder names and file paths", "Repository addresses and any other links", "Passwords, keys, tokens and environment variables", "Server, database and infrastructure names", "Your computer's user name, machine name and device details", "Raw verification logs", "Anything you have not approved"];
+const crItem = id => S.cr.items.find(i => String(i.id) === String(id));
+const crApproved = () => S.cr.items.filter(i => i.approved);
+const crWhy = i => !i.text.trim() ? "Write a description for your client first." : (i.status === "delivered" && !i.commits.length && !i.attested) ? "A Delivered item needs evidence: link Git commits, or confirm the work yourself." : "";
+function crDraft() {
+  const c = S.cr;
+  return { project_name: c.project, client_name: c.client, include_prepared_by: c.showPrep, prepared_by: c.prep,
+    items: crApproved().map(i => ({ text: i.text, status: i.status, commits: i.status === "delivered" ? i.commits : [], attested: i.status === "delivered" && i.attested, approved: true })),
+    verification: { mode: c.vmode, text: c.vtext } };
+}
+const crBody = () => ({ ...opts(), draft: crDraft(), approved: S.disp });
+function crInvalidate() {                     // any change to what would be shared voids the preview and the approval
+  const c = S.cr, had = !!c.token;
+  c.res = null; c.token = null; c.hash = null; if (had) { c.cleared = true; S.lastExport = null; }
+  crPaint();
+}
+function renderKeep() {
+  const a = document.activeElement, fk = a?.dataset?.fk, s = a?.selectionStart, e = a?.selectionEnd;
+  cache.screen = null; render();
+  if (fk) { const n = document.querySelector(`[data-fk="${fk}"]`); if (n) { n.focus({ preventScroll: true }); try { if (s != null) n.setSelectionRange(s, e); } catch (x) { } } }
+}
+function modeSwitch() {
+  return `<div class="seg" id="modeseg" role="group" aria-label="Report mode" style="margin:0 0 14px"><button type="button" id="mode-private" data-mode="private" aria-pressed="${S.mode === "private"}" class="${S.mode === "private" ? "on" : ""}">Private Evidence</button><button type="button" id="mode-client" data-mode="client" aria-pressed="${S.mode === "client"}" class="${S.mode === "client" ? "on" : ""}">Client-Safe Report</button></div>`;
+}
+function crStatusHTML() {
+  const c = S.cr, ap = crApproved(), un = c.items.length - ap.length, pend = pendingHigh().length, r = c.res;
+  const row = (ok, t) => `<li class="${ok ? "ok" : ""}"><span class="mk" aria-hidden="true">${ok ? "✓" : ""}</span><span>${t}</span></li>`;
+  const issues = r && r.issues && r.issues.length ? `<ul class="issues" role="alert">${r.issues.map(i => `<li>${esc(i.message)}</li>`).join("")}</ul>` : (r && r.message ? `<div class="issues" role="alert">${esc(r.message)}</div>` : "");
+  return `<ul class="chk5">${row(!!c.project.trim(), "Project name written by you")}
+    ${row(ap.length > 0, `${ap.length} approved item${ap.length === 1 ? "" : "s"}${un ? ` · ${un} not approved (will not be shared)` : ""}`)}
+    ${row(!pend, pend ? `${pend} high-severity finding${pend > 1 ? "s" : ""} still need your review in the <button type="button" class="linkbtn" data-go="privacy">Privacy Center</button>` : "High-severity privacy findings reviewed")}
+    ${row(!!(r && r.ok), r ? (r.ok ? "Passed the automatic checks" : "Fix the problems listed below") : "Automatic checks not run yet. Choose Preview client report")}
+    ${row(!!c.token, c.token ? `Approved for sharing · fingerprint <span class="mono">${esc(c.hash.slice(0, 8))}</span>` : (c.cleared ? "Approval cleared because the content changed. Review sharing again" : "Not approved yet"))}</ul>${issues}`;
+}
+function crPreviewHTML() {
+  const r = S.cr.res;
+  if (r && r.html) return `<div class="callout ok" role="status"><div><b>Client-Safe Report — Only approved information will be shared.</b> This is the exact content that will be exported (fingerprint <span class="mono">${esc(r.content_hash.slice(0, 8))}</span>). Read all of it.</div></div><iframe class="frame" sandbox="allow-same-origin" title="Client report preview" srcdoc="${esc(r.html)}"></iframe>`;
+  return `<div class="empty"><b>${r ? "No preview: fix the problems listed above" : "Preview not generated"}</b>The preview is built from approved items only and is the exact file that will be exported.<br><button class="btn" id="cr-preview2" data-fk="crprev2">Preview client report</button></div>`;
+}
+function crPaint() {
+  const s = $("#crstatus"), p = $("#crprevcard"), a = $("#cr-review"), b = $("#cr-export");
+  if (s) s.innerHTML = crStatusHTML();
+  if (p) { p.innerHTML = crPreviewHTML(); fitFrame(); }
+  if (a) a.disabled = !(S.cr.res && S.cr.res.ok);
+  if (b) b.disabled = !S.cr.token || S.exporting;
+}
+function crItemHTML(i, n, total) {
+  const ok = i.approved, why = ok ? "" : crWhy(i), fk = k => `data-fk="${k}-${i.id}"`;
+  const ev = i.status === "delivered" ? `<div class="rev"><label class="ropt"><input type="checkbox" data-iatt="${i.id}" ${fk("att")} ${i.attested ? "checked" : ""} ${ok ? "disabled" : ""}><span>I confirm this work was delivered and I take responsibility for saying so.</span></label>
+      <button type="button" class="btn sm" data-evtoggle="${i.id}" ${fk("evt")} ${ok ? "disabled" : ""} aria-expanded="${S.cr.ev.has(i.id)}">Link Git commits as evidence (${i.commits.length} selected)</button>
+      ${S.cr.ev.has(i.id) && !ok ? `<div class="evlist" role="group" aria-label="Commits supporting item ${n}">${S.prev.commits.length ? S.prev.commits.map(c => `<label class="ropt"><input type="checkbox" data-icommit="${i.id}" value="${esc(c[0])}" ${fk("cm" + c[0].slice(0, 7))} ${i.commits.includes(c[0]) ? "checked" : ""}><span><span class="mono">${esc(c[0].slice(0, 7))}</span> ${esc(c[2])} <span class="note">${esc(c[1])}</span></span></label>`).join("") : '<p class="note">No commits in this period.</p>'}</div>` : ""}</div>` : "";
+  return `<div class="ritem ${ok ? "ok" : "draft"}" data-iid="${i.id}"><div class="rtop"><b>Item ${n}</b>${ok ? '<span class="badge teal">Approved</span>' : '<span class="badge bad">Not approved: will not be shared</span>'}
+      <span class="rbtns"><button type="button" class="btn sm" data-iup="${i.id}" ${fk("up")} aria-label="Move item ${n} up" ${n === 1 ? "disabled" : ""}>↑</button><button type="button" class="btn sm" data-idown="${i.id}" ${fk("dn")} aria-label="Move item ${n} down" ${n === total ? "disabled" : ""}>↓</button>
+      ${ok ? `<button type="button" class="btn sm" data-iedit="${i.id}" ${fk("ed")} aria-label="Edit item ${n}">Edit item</button>` : ""}<button type="button" class="btn sm" data-irm="${i.id}" ${fk("rm")} aria-label="Remove item ${n}">Remove item</button></span></div>
+    ${ok ? `<p class="rtext">${esc(i.text)}</p>` : `<textarea data-itext="${i.id}" ${fk("t")} rows="2" maxlength="400" placeholder="Describe the work in words your client would use. No code, file names, links or secrets." aria-label="Client-facing description for item ${n}">${esc(i.text)}</textarea>`}
+    <div class="rmeta"><label>Status <select data-istatus="${i.id}" ${fk("st")} ${ok ? "disabled" : ""}><option value="in_progress" ${i.status === "in_progress" ? "selected" : ""}>In progress</option><option value="delivered" ${i.status === "delivered" ? "selected" : ""}>Delivered (needs evidence)</option></select></label>
+      ${ok ? "" : `<button type="button" class="btn dark sm" data-iappr="${i.id}" ${fk("ap")} ${why ? "disabled" : ""} ${why ? `aria-describedby="why-${i.id}"` : ""}>Approve item</button>`}</div>${ev}
+    ${why ? `<p class="why-off" id="why-${i.id}">${esc(why)}</p>` : ""}</div>`;
+}
+function vClient() {
+  const P = S.prev, c = S.cr, cs = P.check_stats, hasChecks = P.n_checks > 0;
+  const done = [true, !!c.project.trim() && crApproved().length > 0, !!(c.res && c.res.ok) && !pendingHigh().length, !!c.token, !!S.lastExport];
+  const now = done.findIndex(x => !x);
+  const steps = ["Private evidence", "Prepare client summary", "Privacy review", "Client preview", "Export"];
+  const rq = P.requests.slice(0, 30);
+  return `<div><div class="ph"><div><h2>Report Studio <span class="chip">${esc(P.project)}</span></h2><p>${esc(P.period)} · Only information you approve here can reach the client report.</p></div>
+    <div class="act"><button class="btn" id="cr-preview" data-fk="crprev" ${c.busy ? "disabled" : ""}>${c.busy === "preview" ? "Checking…" : "Preview client report"}</button><button class="btn" id="cr-review" data-fk="crrev" ${c.res && c.res.ok ? "" : "disabled"}>Review sharing</button><button class="btn dark" id="cr-export" data-fk="crexp" ${c.token && !S.exporting ? "" : "disabled"}>${ic("dl")} Export client report</button></div></div>
+  ${modeSwitch()}
+  <div class="callout ok"><div><b>Client-Safe Report — Only approved information will be shared.</b> Your prompts, commit messages, commands, file names and logs stay private. Automatic checks reduce mistakes but cannot guarantee that nothing confidential remains, so read the preview before you approve it.</div></div>
+  <ol class="flow" aria-label="Client report steps">${steps.map((t, i) => `<li class="${done[i] ? "done" : i === now ? "now" : ""}"${i === now ? ' aria-current="step"' : ""}><span class="n">${done[i] ? "✓" : i + 1}</span>${t}</li>`).join("")}</ol>
+  ${exportCard()}
+  <div class="card sec"><h3>Report details <span class="chip">typed by you</span></h3><div class="grid gform">
+    <label class="field">Project name for the client<input id="crproj" maxlength="80" value="${esc(c.project)}" placeholder="The name your client knows" autocomplete="off" spellcheck="false"><small>Never filled in from your folder or repository name.</small></label>
+    <label class="field">Client name (optional)<input id="crclient" maxlength="80" value="${esc(c.client)}" placeholder="Acme Co" autocomplete="off" spellcheck="false"></label>
+    <div class="field"><label class="ropt"><input type="checkbox" id="crprepchk" data-fk="prepchk" ${c.showPrep ? "checked" : ""}><span>Show “Prepared by” on the report</span></label><input id="crprep" maxlength="80" value="${esc(c.prep)}" placeholder="Your name" ${c.showPrep ? "" : "disabled"} aria-label="Prepared by" autocomplete="off" spellcheck="false"><small>Off by default. Your name is only included if you turn this on.</small></div></div></div>
+  <div class="card sec"><h3>Client summary <span class="chip">${crApproved().length} approved of ${c.items.length}</span></h3>
+    <p class="note" style="margin-bottom:10px">Write each item in plain language. Only <b>approved</b> items are shared. A Delivered item needs evidence; a request alone never counts as completed work.</p>
+    ${c.items.length ? c.items.map((i, k) => crItemHTML(i, k + 1, c.items.length)).join("") : '<div class="empty" style="padding:14px"><b>No items yet</b>Add an item, or start from your private evidence below.</div>'}
+    <div class="dact"><button class="btn" id="cr-add" data-fk="add">${ic("plus")} Add item</button></div></div>
+  <div class="card sec"><h3>Start from your private evidence <span class="chip">private</span></h3>
+    <p class="note" style="margin-bottom:8px">${P.requests.length} request${P.requests.length === 1 ? "" : "s"}, ${P.n_commits} commit${P.n_commits === 1 ? "" : "s"} and ${P.n_checks} recorded check${P.n_checks === 1 ? "" : "s"} are available only to you. “Use as starting point” copies one request’s masked wording into a <b>new, unapproved</b> item for you to rewrite. Nothing is copied automatically.</p>
+    ${rq.length ? `<div class="reqs">${rq.map(r => `<div class="req"><span class="no">${r.i + 1}</span><div class="tx" style="cursor:default">${esc(r.title)}</div><button type="button" class="btn sm" data-use="${esc(r.key)}" aria-label="Use request ${r.i + 1} as a starting point">Use as starting point</button></div>`).join("")}</div>${P.requests.length > rq.length ? `<p class="note" style="margin-top:6px">Showing the first ${rq.length} of ${P.requests.length}. Add items by hand for the rest.</p>` : ""}` : '<div class="empty" style="padding:14px"><b>No requests in this period</b></div>'}</div>
+  <div class="card sec"><h3>Verification statement</h3><fieldset class="rgroup"><legend class="note">What should the report say about testing?</legend>
+    <label class="ropt"><input type="radio" name="crv" value="none" ${c.vmode === "none" ? "checked" : ""}><span>No verification statement</span></label>
+    <label class="ropt"><input type="radio" name="crv" value="auto" ${c.vmode === "auto" ? "checked" : ""} ${hasChecks ? "" : "disabled"}><span>Counts only: ${hasChecks ? `${cs.ok} of ${P.n_checks} recorded checks finished without a reported error` : "no checks were recorded in this period"}. No commands or output.</span></label>
+    <label class="ropt"><input type="radio" name="crv" value="custom" ${c.vmode === "custom" ? "checked" : ""}><span>My own wording</span></label></fieldset>
+    ${c.vmode === "custom" ? `<textarea id="crvtext" rows="2" maxlength="300" aria-label="Verification wording" placeholder="e.g. Checkout flow tested on desktop and mobile before delivery." style="width:100%;margin-top:8px;border:1px solid var(--line-2);border-radius:10px;background:var(--surface);padding:8px 10px;font-size:13.5px">${esc(c.vtext)}</textarea>` : ""}
+    <p class="note" style="margin-top:8px">Counts come from commands recorded in your session logs. They were not re-run for this report, and the report says so.</p></div>
+  <div class="card sec"><h3>Privacy review</h3><div id="crstatus">${crStatusHTML()}</div>
+    <p class="note" style="margin-top:12px"><b>Never exported:</b> ${CR_EXCLUDED.map(esc).join("; ")}.</p>
+    <p class="note" style="margin-top:6px">Reviewing a secret finding in the Privacy Center does not approve anything for the client report. The two approvals are separate, and both are required.</p>
+    ${S.data.chrome ? `<label class="ropt" style="margin-top:10px"><input type="checkbox" id="crpdf" ${c.pdf ? "checked" : ""}><span>Also create a PDF (checked against the approved content before it is saved)</span></label>` : '<p class="note" style="margin-top:8px">PDF export is not available here; the HTML report can be printed to PDF.</p>'}</div>
+  <div class="card sec"><h3>Client preview <span class="chip">exact export</span></h3><div id="crprevcard">${crPreviewHTML()}</div></div></div>`;
+}
+async function crDoPreview() {
+  const c = S.cr; c.busy = "preview"; renderKeep();
+  try {
+    const r = await api("/api/client/preview", crBody());
+    if (c.token && r.content_hash !== c.hash) { c.token = null; c.hash = null; c.cleared = true; }
+    c.res = r;
+  } catch (e) { toast(e.message); }
+  c.busy = ""; cache.screen = null; render();
+  const card = $("#crprevcard"); if (card) card.closest(".card").scrollIntoView({ block: "start" });
+  return !!(c.res && c.res.ok);
+}
+async function crReview() {
+  const c = S.cr;
+  if (!(c.res && c.res.ok) && !(await crDoPreview())) { toast("Fix the problems listed in the Privacy review first"); return; }
+  if (pendingHigh().length) { toast("Review high-severity findings first"); go("privacy"); return; }
+  S.dlg = { kind: "crreview", ack: false }; showDlg();
+}
+async function crApprove() {
+  const g = S.dlg, c = S.cr; if (!g || !g.ack || !c.res || !c.res.ok) return;
+  try {
+    const r = await api("/api/client/approve", { ...crBody(), confirm: { privacy_review: true, content_hash: c.res.content_hash } });
+    if (r._status === 409 || !r.ok) { c.res = null; c.token = null; c.hash = null; toast(r.message || "Approval was refused. Preview again."); }
+    else { c.token = r.token; c.hash = r.content_hash; c.cleared = false; toast("Approved for sharing"); }
+  } catch (e) { toast(e.message); }
+  closeDlg(); cache.screen = null; render();
+}
+async function crExport() {
+  const c = S.cr; if (!c.token) { toast("Preview and approve the client report first"); return; }
+  S.exporting = true; S.exportFail = ""; S.lastExport = null; renderKeep();
+  try {
+    const r = await api("/api/client/export", { ...crBody(), token: c.token, pdf: !!(c.pdf && S.data.chrome) });
+    if (r._status === 409 || !r.ok) {
+      S.exportFail = r.message || "Export was blocked. Nothing was saved.";
+      if (r.reason === "approval") { c.token = null; c.hash = null; c.cleared = true; }
+      if (r.reason === "findings") go("privacy");
+    } else { S.lastExport = r; await loadState(); }
+  } catch (e) { S.exportFail = e.message || "The client report could not be exported."; }
+  S.exporting = false; cache.screen = null; render();
+}
+const crNext = () => (S.cr.token ? crExport() : crReview());
 
 /* ---------- Privacy Center ---------- */
 function vPrivacy() {
@@ -259,6 +410,7 @@ function vPrivacy() {
     return `<div class="grp${op ? " open" : ""}" data-gid="${f.id}">${hi ? `<button type="button" class="gh" data-toggle="${f.id}" aria-expanded="${op}" aria-controls="gp-${f.id}"><span class="chev" aria-hidden="true">${ic("arrow", 12)}</span>${head}<span class="gcta">${op ? "Hide" : "Show"} ${dets.length} detection${dets.length === 1 ? "" : "s"}</span></button>` : `<div class="gh plain">${head}</div>`}
       <div class="mono gctx">${esc(f.context)}</div>${hi ? `<div class="gp" id="gp-${f.id}" role="region" aria-label="${esc(f.rule)} detections" ${op ? "" : "hidden"}>${op ? dets.map(detRow).join("") : ""}</div>` : '<p class="note">Masked automatically; no review needed.</p>'}</div>`; }).join("") : `<div class="empty"><b>No sensitive values found</b>Nothing in this period matched a redaction rule. Read the report before sharing anyway.</div>`}</div>
   <div class="sec">${termsCard}</div>
+  <div class="card sec"><h3>Client report approval <span class="chip">${S.cr.token ? "approved" : "not approved"}</span></h3><p class="note">${S.cr.token ? "The current client report is approved for sharing. Any change to its content, to this project or period, or to the findings above clears the approval." : "Reviewing a finding here does not approve anything for the client report. Approve the final client content separately in Report Studio → Client-Safe Report."}</p><div style="margin-top:10px"><button class="btn" data-go="studio">Open Report Studio ${ic("arrow")}</button></div></div>
   <div class="card sec"><h3>Export approval</h3><p class="note">${pendingHigh().length ? `${pendingHigh().length} high-severity item(s) still need review. Export is blocked, in the app and on the server, until each one is reviewed.` : "All high-severity items are reviewed. You can export from Report Studio."}</p><div style="margin-top:10px"><button class="btn teal" data-go="studio">Go to Report Studio ${ic("arrow")}</button></div></div></div>`;
 }
 
@@ -285,7 +437,7 @@ function vReports() {
   const all = S.data.history, list = all.filter(h => (!q || (h.project + " " + (h.client || "")).toLowerCase().includes(q)) && (!S.rf || h.at.slice(0, 10) >= S.rf) && (!S.rt || h.at.slice(0, 10) <= S.rt));
   return `<div><div class="ph"><div><h2>Reports <span class="chip">${all.length}</span></h2><p>Reports exported from this app, stored on this computer.</p></div><div class="act"><button class="btn dark" id="genreport">${ic("doc")} New report</button></div></div>
   <div class="card"><div class="grid gform"><label class="field">Search project or client<input id="rq" type="search" value="${esc(S.q)}" placeholder="Search" spellcheck="false"></label><label class="field">From<input type="date" id="rf" value="${esc(S.rf)}"></label><label class="field">To<input type="date" id="rt" value="${esc(S.rt)}"></label></div></div>
-  <div class="card sec">${list.length ? `<table class="tbl"><thead><tr><th>Project</th><th class="hide-m">Client</th><th>Period</th><th class="hide-m">Items</th><th>Exported</th><th></th></tr></thead><tbody>${list.map(h => { const n = esc(h.html.split(/[\\/]/).pop()); return `<tr><td><b style="font-weight:500">${esc(h.project)}</b></td><td class="hide-m">${esc(h.client || "—")}</td><td class="mono">${esc(h.period)}</td><td class="hide-m">${h.requests} req · ${h.commits} commits</td><td>${esc(h.at)}</td>
+  <div class="card sec">${list.length ? `<table class="tbl"><thead><tr><th>Project</th><th class="hide-m">Client</th><th>Period</th><th class="hide-m">Items</th><th>Exported</th><th></th></tr></thead><tbody>${list.map(h => { const n = esc(h.html.split(/[\\/]/).pop()); return `<tr><td><b style="font-weight:500">${esc(h.project)}</b> ${h.mode === "client" ? '<span class="badge teal">Client-safe</span>' : '<span class="badge">Developer · private</span>'}</td><td class="hide-m">${esc(h.client || "—")}</td><td class="mono">${esc(h.period)}</td><td class="hide-m">${h.mode === "client" ? `${h.requests} approved item${h.requests === 1 ? "" : "s"}` : `${h.requests} req · ${h.commits} commits`}</td><td>${esc(h.at)}</td>
     <td style="text-align:right;white-space:nowrap"><button class="btn sm" data-open="${esc(fname(h.html))}" data-kind="html">Open</button> ${h.pdf ? `<button class="btn sm" data-open="${esc(fname(h.pdf))}" data-kind="pdf">PDF</button> ` : ""}<button class="btn sm" data-showfile="${esc(fname(h.html))}" data-kind="html">Show in Finder</button> <button class="btn sm" data-delrep="${n}" aria-label="Delete report ${esc(h.project)}">Delete</button></td></tr>`; }).join("")}</tbody></table>` :
     `<div class="empty"><b>${all.length ? "No reports match" : "No reports yet"}</b>${all.length ? "Clear the search or date filters." : "Export a report from Report Studio and it will be listed here."}</div>`}</div></div>`;
 }
@@ -305,8 +457,12 @@ function obHTML() {
 }
 function showOb() { const r = $("#obroot"); r.innerHTML = obHTML(); syncPickers(); r.querySelector("button.dark,button.teal,button")?.focus(); }
 async function finishOb(go_) {
-  S.ob = null; showOb();
+  if (S.ob?.finishing) return;                         // a double click must not start a second save
+  if (S.ob) S.ob.finishing = true;
+  // Persist FIRST and close the dialog after: closing before the save landed left a window (slow disk, slow Mac) in which "setup finished" was
+  // visible but not stored, so a quit right then showed onboarding again, and tests that read the settings right after the close raced the save.
   try { S.data.settings = await api("/api/settings", { onboarded: true }); } catch (e) { toast(e.message); }
+  S.ob = null; showOb();
   go(go_ || "overview");
 }
 
@@ -336,6 +492,7 @@ async function load() {
   try {
     S.prev = await api("/api/preview", opts()); { const ids = new Set(highD().map(d => d.id)); for (const k of Object.keys(S.disp)) if (!ids.has(k)) delete S.disp[k]; }
     S.titles = {};
+    { const c = S.cr, have = new Set(S.prev.commits.map(x => x[0])); c.items.forEach(i => { i.commits = i.commits.filter(h => have.has(h)); if (i.approved && i.status === "delivered" && !i.commits.length && !i.attested) i.approved = false; }); c.res = null; c.token = null; c.hash = null; }
   } catch (e) { S.err = e.message; S.prev = null; }
   S.loading = false; render();
   if (S.prev) toast(`Loaded ${S.prev.requests.length} requests, ${S.prev.n_commits} commits`);
@@ -359,7 +516,11 @@ async function saveSettings(msg) {                  // persists every Settings f
   try {
     S.data.settings = await api("/api/settings", { claude_dir: $("#s_claude").value.trim(), out_dir: $("#s_out").value.trim(), author: $("#s_author").value.trim(), client: $("#s_client").value.trim(),
       theme: S.data.settings.theme, redact_terms: $("#s_terms").value.split("\n") });
-    await loadState(); if (!S.author) S.author = S.data.settings.author; if (!S.client) S.client = S.data.settings.client; cache.screen = null; render(); toast(msg);
+    await loadState(); if (!S.author) S.author = S.data.settings.author; if (!S.client) S.client = S.data.settings.client;
+    const typed = ["s_author", "s_client", "s_terms"].map(id => [id, document.getElementById(id)]).filter(x => x[1]).map(x => [x[0], x[1].value]);   // text typed while the save was in flight
+    cache.screen = null; render();
+    typed.forEach(([id, v]) => { const el = document.getElementById(id); if (el) el.value = v; });                                                       // must survive the re-render
+    toast(msg);
   } catch (er) { toast(er.message); }
 }
 function rangeFor(k) {
@@ -374,12 +535,19 @@ function setRange(k) {
   if (k === "all") { S.since = ""; S.until = ""; } else if (k === "month") { S.since = iso(new Date(now.getFullYear(), now.getMonth(), 1)); S.until = iso(now); }
   else { S.since = iso(new Date(now - (+k - 1) * 864e5)); S.until = iso(now); }
 }
-function pick(path) { S.repo = path; S.repoDraft = null; S.prev = null; S.html = null; S.err = ""; S.lastExport = null; render(); }
+function pick(path) { S.repo = path; S.repoDraft = null; S.prev = null; S.html = null; S.cr = newCR(); S.err = ""; S.lastExport = null; render(); }
 async function rescan() { if (S.repo) { await load(); } else render(); }
 
 document.addEventListener("click", async e => {
-  const t = e.target.closest("[data-open],[data-showfile],[data-delrep],[data-rmproj],[data-choose],[data-go],[data-pick],[data-range],[data-rmterm],button[data-theme],[data-toggle],[data-reveal],[data-review],[data-close],button[id]");
+  const t = e.target.closest("[data-mode],[data-iappr],[data-iedit],[data-irm],[data-iup],[data-idown],[data-use],[data-evtoggle],[data-open],[data-showfile],[data-delrep],[data-rmproj],[data-choose],[data-go],[data-pick],[data-range],[data-rmterm],button[data-theme],[data-toggle],[data-reveal],[data-review],[data-close],button[id]");
   if (!t) return;
+  if (t.dataset.mode) { S.mode = t.dataset.mode === "private" ? "private" : "client"; cache.screen = null; render(); $("#mode-" + S.mode)?.focus({ preventScroll: true }); return; }
+  if (t.dataset.iappr) { const i = crItem(t.dataset.iappr); if (i && !crWhy(i)) { i.approved = true; i.text = i.text.trim(); S.cr.ev.delete(i.id); crInvalidate(); renderKeep(); } return; }
+  if (t.dataset.iedit) { const i = crItem(t.dataset.iedit); if (i) { i.approved = false; crInvalidate(); cache.screen = null; render(); $(`[data-fk="t-${i.id}"]`)?.focus(); } return; }
+  if (t.dataset.irm) { const k = S.cr.items.findIndex(i => String(i.id) === t.dataset.irm); if (k >= 0) { S.cr.items.splice(k, 1); crInvalidate(); cache.screen = null; render(); $("#cr-add")?.focus(); toast("Item removed"); } return; }
+  if (t.dataset.iup || t.dataset.idown) { const id = t.dataset.iup || t.dataset.idown, a = S.cr.items, k = a.findIndex(i => String(i.id) === id), j = t.dataset.iup ? k - 1 : k + 1; if (k >= 0 && j >= 0 && j < a.length) { [a[k], a[j]] = [a[j], a[k]]; crInvalidate(); renderKeep(); } return; }
+  if (t.dataset.use) { const r = S.prev.requests.find(x => x.key === t.dataset.use); if (r) { const id = S.cr.nid++; S.cr.items.push({ id, text: r.title, status: "in_progress", commits: [], attested: false, approved: false }); cache.screen = null; render(); $(`[data-fk="t-${id}"]`)?.focus(); toast("Added as a draft. Rewrite it for your client, then approve it."); } return; }
+  if (t.dataset.evtoggle) { const id = +t.dataset.evtoggle; S.cr.ev.has(id) ? S.cr.ev.delete(id) : S.cr.ev.add(id); renderKeep(); return; }
   if (t.dataset.open) return openFile(t.dataset.open, t.dataset.kind);
   if (t.dataset.showfile) return revealFile(t.dataset.showfile, t.dataset.kind);
   if (t.dataset.delrep) { S.dlg = { kind: "delrep", name: t.dataset.delrep }; return showDlg(); }
@@ -411,7 +579,12 @@ document.addEventListener("click", async e => {
     case "load": syncForm(); await load(); break;
     case "preview": case "preview2": await makePreview(); break;
     case "export": await doExport(); break;
-    case "retryexp": await doExport(); break;
+    case "retryexp": await (S.mode === "client" ? crExport() : doExport()); break;
+    case "cr-add": { const id = S.cr.nid++; S.cr.items.push({ id, text: "", status: "in_progress", commits: [], attested: false, approved: false }); cache.screen = null; render(); $(`[data-fk="t-${id}"]`)?.focus(); break; }
+    case "cr-preview": case "cr-preview2": await crDoPreview(); break;
+    case "cr-review": await crReview(); break;
+    case "crconfirm": await crApprove(); break;
+    case "cr-export": await crExport(); break;
     case "togglecleared": S.showCleared = !S.showCleared; render(); break;
     case "confirmrev": { const g = S.dlg; if (g?.pick && g.ack) { S.disp[g.id] = g.pick; closeDlg(); render(); toast("Review recorded"); } break; }
     case "addterm": { const v = $("#term").value.trim(); if (v) { S.terms.push(v); await rescan(); } break; }
@@ -420,6 +593,14 @@ document.addEventListener("click", async e => {
   }
 });
 document.addEventListener("change", e => {
+  const d = e.target.dataset || {};
+  if (d.istatus) { const i = crItem(d.istatus); if (i && !i.approved) { i.status = e.target.value; if (i.status !== "delivered") { i.commits = []; i.attested = false; } renderKeep(); } }
+  else if (d.iatt) { const i = crItem(d.iatt); if (i && !i.approved) { i.attested = e.target.checked; renderKeep(); } }
+  else if (d.icommit) { const i = crItem(d.icommit); if (i && !i.approved) { const h = e.target.value; i.commits = e.target.checked ? [...new Set([...i.commits, h])] : i.commits.filter(x => x !== h); renderKeep(); } }
+  else if (e.target.id === "crprepchk") { S.cr.showPrep = e.target.checked; crInvalidate(); renderKeep(); }
+  else if (e.target.name === "crv") { S.cr.vmode = e.target.value; crInvalidate(); renderKeep(); }
+  else if (e.target.id === "crpdf") S.cr.pdf = e.target.checked;
+  else if (S.dlg?.kind === "crreview" && e.target.id === "crack") { S.dlg.ack = e.target.checked; $("#crconfirm").disabled = !S.dlg.ack; }
   if (S.dlg?.kind === "review" && (e.target.name === "disp" || e.target.id === "ack")) {      // update in place so keyboard focus stays put
     if (e.target.name === "disp") S.dlg.pick = e.target.value; else S.dlg.ack = e.target.checked;
     const ok = !!(S.dlg.pick && S.dlg.ack), b = $("#confirmrev"), h = $("#rvhint");
@@ -428,6 +609,10 @@ document.addEventListener("change", e => {
   }
 });
 document.addEventListener("input", e => {
+  const t = e.target;
+  if (t.dataset?.itext) { const i = crItem(t.dataset.itext); if (i && !i.approved) { i.text = t.value; const b = $(`[data-iappr="${i.id}"]`); if (b) b.disabled = !!crWhy(i); const w = $(`#why-${i.id}`); if (w) w.hidden = !crWhy(i); } }
+  const f = { crproj: "project", crclient: "client", crprep: "prep", crvtext: "vtext" }[t.id];
+  if (f) { S.cr[f] = t.value; crInvalidate(); }
   if (e.target.id === "repo") S.repoDraft = e.target.value;
   if (["rq", "rf", "rt"].includes(e.target.id)) { const id = e.target.id, pos = e.target.selectionStart; S[{ rq: "q", rf: "rf", rt: "rt" }[id]] = e.target.value; cache.screen = null; render(); const n = $("#" + id); n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) { } }
   if (["since", "until", "gitauthor", "client"].includes(e.target.id)) syncForm();
@@ -440,8 +625,8 @@ window.wrCommand = async c => {
   if (c.startsWith("go:")) return go(c.slice(3));
   if (c === "add") return addProjectFlow();
   if (c === "refresh") { await loadState(); render(); return toast("Project list refreshed"); }
-  if (c === "export") { if (!S.prev) { go("projects"); return toast("Load a project's activity first"); } go("studio"); return doExport(); }
-  if (c === "preview") { if (!S.prev) return toast("Load a project's activity first"); go("studio"); return makePreview(); }
+  if (c === "export") { if (!S.prev) { go("projects"); return toast("Load a project's activity first"); } go("studio"); return S.mode === "client" ? crNext() : doExport(); }
+  if (c === "preview") { if (!S.prev) return toast("Load a project's activity first"); go("studio"); return S.mode === "client" ? crDoPreview() : makePreview(); }
 };
 document.addEventListener("keydown", e => {
   if (e.key === "Tab" && S.dlg) { const f = [...document.querySelectorAll("#dlgroot input,#dlgroot button")].filter(x => !x.disabled && x.offsetParent !== null); if (f.length) { const i = f.indexOf(document.activeElement); if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); } else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); } } }

@@ -2,10 +2,11 @@
 Synthetic data only. Every PDF is rendered page-by-page and checked for: Letter size, page count, blank pages, text inside margins,
 selectable/searchable text, page order, completeness vs the HTML, colours present, and absence of sentinel secrets."""
 import json, os, random, re, shutil, subprocess, sys, tempfile, types, unittest
+from testsupport import modules_patched
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import workreceipt as w
-CHROME = next((c for c in ("/usr/bin/google-chrome", "/usr/bin/chromium") if os.path.exists(c)), None)
+CHROME = next((c for c in (os.environ.get("WR_CHROME"), "/usr/bin/google-chrome", "/usr/bin/chromium", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome") if c and os.path.exists(c)), None)
 HAVE = bool(CHROME and shutil.which("pdftotext") and shutil.which("pdftoppm") and shutil.which("pdfinfo"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 RESULTS = []
@@ -64,7 +65,8 @@ class PdfQuality(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         shutil.rmtree(cls.tmp, ignore_errors=True)
-        with open(os.path.join(HERE, "docs", "pdf_qa_results.json"), "w") as f:
+        os.makedirs(os.path.join(HERE, "validation-results"), exist_ok=True)  # gitignored: tests must not dirty tracked files
+        with open(os.path.join(HERE, "validation-results", "pdf_qa_results.json"), "w") as f:
             json.dump([{k: v for k, v in r.items() if k not in ("text", "info")} for r in RESULTS], f, indent=1)
 
     def build(self, name, c, min_pages, max_pages):
@@ -177,7 +179,7 @@ class MacInspect(unittest.TestCase):
         return p
 
     def with_quartz(self, mod):
-        return mock.patch.dict(sys.modules, {"Quartz": mod})
+        return modules_patched({"Quartz": mod})
 
     def test_source_does_not_use_nonexistent_pdfkit_constructor(self):
         src = open(os.path.join(HERE, "desktop", "pdf_mac.py")).read()
@@ -228,8 +230,8 @@ class MacInspect(unittest.TestCase):
     def test_real_chrome_pdf_passes_byte_verifier(self):
         if not HAVE: self.skipTest("needs Chrome")
         p = to_pdf(w.render(ctx(30, 60, 20)), "real", self.tmp); d = self.pm.inspect_pdf(p)
-        self.assertIn(d["verifier"], ("bytes", "unverified")); self.assertIsNone(d["problem"]); self.assertTrue(d["signature"])
-        if d["verifier"] == "bytes": self.assertGreaterEqual(d["pages"], 3)
+        self.assertIn(d["verifier"], ("pdfkit", "bytes", "unverified")); self.assertIsNone(d["problem"]); self.assertTrue(d["signature"])  # pdfkit is the primary verifier on macOS
+        if d["verifier"] in ("pdfkit", "bytes"): self.assertGreaterEqual(d["pages"], 3)
 
 
 @unittest.skipUnless(HAVE, "needs Chrome + poppler")
