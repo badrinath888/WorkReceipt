@@ -1,0 +1,141 @@
+"""v0.8.0 macOS menu-bar widget (TDD). Logic lives in menubar.py (pure, testable); the AppKit shell is desktop/menubar_mac.py.
+SYNTHETIC data only. The widget is opt-in, local, and must never put names, paths, commit text, prompts or secrets in the menu bar."""
+import json, os, subprocess, sys, unittest
+
+import app_core as core, workreceipt as w
+from test_phase1 import WS
+
+AKIA = "AKIAQWERTYUIOPASDFGH"
+NAME, MSG, PROMPT = "zq-confidential-app", "Wire zq-secret-db token", "Connect zq-secret-db with key " + AKIA
+
+
+def git(repo, *a):
+    return subprocess.run(["git", "-C", repo, "-c", "user.email=a@b.c", "-c", "user.name=A", "-c", "commit.gpgsign=false", *a], check=True, capture_output=True, text=True).stdout.strip()
+
+
+class Base(unittest.TestCase):
+    def setUp(self):
+        import menubar
+        self.m = menubar
+        self.ws = WS(name=NAME, commits=[("a.py", MSG, "03")]); self.addCleanup(self.ws.done)
+        self.ws.log([self.ws.user(PROMPT, "2026-11-04T10:00:00Z")])
+        self.repo = self.ws.repo
+        self.head1 = git(self.repo, "rev-parse", "HEAD")
+
+    def enable(self, **kw):
+        return core.save_settings({"menubar": dict({"enabled": True, "projects": [self.repo]}, **kw)})
+
+    def commit(self, msg="More work"):
+        open(os.path.join(self.repo, "b.py"), "a").write("x\n"); git(self.repo, "add", "."); git(self.repo, "commit", "-qm", msg)
+
+    def everything(self, s, snap):
+        return json.dumps(snap) + json.dumps(self.m.menu_items(snap)) + json.dumps(self.m.notification(snap, {"new_commits": 0}, s) or "")
+
+
+class Settings(Base):
+    def test_off_by_default_and_sanitised(self):
+        self.assertEqual(core.DEFAULTS["menubar"], {"enabled": False, "projects": [], "names": False, "notify": False, "seen": {}})
+        s = core.save_settings({"menubar": {"enabled": "yes", "projects": [1, "", self.repo, None], "names": 1, "notify": "x", "seen": {"a": 5, "b": "abc123"}, "evil": 1}})
+        self.assertEqual(s["menubar"], {"enabled": False, "projects": [self.repo], "names": False, "notify": False, "seen": {"b": "abc123"}})
+        self.assertEqual(core.save_settings({"menubar": "junk"})["menubar"], core.DEFAULTS["menubar"])
+
+
+class Snapshot(Base):
+    def test_disabled_reads_nothing(self):
+        seen = []; orig = w.git; w.git = lambda *a: seen.append(a)
+        try:
+            snap = self.m.snapshot(core.save_settings({"menubar": {"enabled": False, "projects": [self.repo]}}))
+        finally:
+            w.git = orig
+        self.assertEqual((snap["enabled"], snap["projects"], seen), (False, [], []))
+
+    def test_only_explicitly_selected_projects_are_read(self):
+        other = os.path.join(self.ws.root, "other"); os.makedirs(other); git(other, "init", "-q")
+        touched = []; orig = w.git; w.git = lambda repo, *a: (touched.append(repo), orig(repo, *a))[1]
+        try:
+            self.m.snapshot(self.enable())
+        finally:
+            w.git = orig
+        self.assertEqual(set(touched), {self.repo})
+
+    def test_new_commits_since_last_seen_with_baseline_first(self):
+        s = self.enable(); self.assertEqual(self.m.snapshot(s)["new_commits"], 0)            # nothing seen yet: baseline, no flood
+        s = self.enable(seen={self.repo: self.head1}); self.commit(); self.commit("again")
+        self.assertEqual(self.m.snapshot(s)["new_commits"], 2)
+        s = self.m.mark_seen(s); self.assertEqual(self.m.snapshot(s)["new_commits"], 0)
+        self.assertEqual(s["menubar"]["seen"], {self.repo: git(self.repo, "rev-parse", "HEAD")})
+
+    def test_activity_and_review_status(self):
+        snap = self.m.snapshot(self.enable(), window_days=3650)
+        self.assertGreaterEqual(snap["sessions"], 1)
+        self.assertGreaterEqual(snap["review"]["pending"], 1)                               # the fake key in the session log needs review before any export
+        self.assertIsNone(snap["review"]["last_report"])
+
+    def test_missing_or_non_git_selected_project_is_harmless(self):
+        s = core.save_settings({"menubar": {"enabled": True, "projects": ["/nonexistent/zz", self.ws.root]}})
+        self.assertEqual(self.m.snapshot(s)["new_commits"], 0)
+
+
+class Privacy(Base):
+    def leaks(self, text, names):
+        bad = [self.repo, MSG, "zq-secret-db", "AKIA", "Connect", self.ws.root] + ([] if names else [NAME])
+        for b in bad:
+            self.assertNotIn(b, text, b)
+
+    def test_default_menu_and_notification_have_no_identifying_content(self):
+        s = self.enable(seen={self.repo: self.head1}); self.commit(MSG)
+        snap = self.m.snapshot(s, window_days=3650)
+        self.leaks(self.everything(s, snap), names=False)
+        self.assertIn("Project 1", json.dumps(snap))
+
+    def test_names_are_opt_in_and_still_exclude_paths_messages_prompts_secrets(self):
+        s = self.enable(names=True, notify=True, seen={self.repo: self.head1}); self.commit(MSG)
+        snap = self.m.snapshot(s, window_days=3650)
+        text = self.everything(s, snap); self.leaks(text, names=True)
+        self.assertIn(NAME, text)
+
+
+class MenuAndNotify(Base):
+    def test_quick_actions_open_app_and_report_studio_without_bypassing_review(self):
+        snap = self.m.snapshot(self.enable())
+        acts = [i["action"] for i in self.m.menu_items(snap) if i and i.get("action")]
+        for a in ("open", "report", "refresh", "mark_seen"):
+            self.assertIn(a, acts)
+        self.assertEqual(self.m.ACTION_CMD["report"], "go:studio")                          # Studio, where privacy review + approval still apply
+        self.assertNotIn("export", " ".join(self.m.ACTION_CMD.values()))
+
+    def test_notification_only_on_new_commits_and_only_when_enabled(self):
+        s = self.enable(notify=True, seen={self.repo: self.head1}); self.commit()
+        snap = self.m.snapshot(s)
+        self.assertEqual(self.m.notification(snap, {"new_commits": 0}, s), "1 new commit in your selected projects")
+        self.assertIsNone(self.m.notification(snap, {"new_commits": 1}, s))                 # nothing new since last notice
+        self.assertIsNone(self.m.notification(snap, {"new_commits": 0}, self.enable(notify=False)))
+
+    def test_notify_uses_escaped_osascript(self):
+        calls = []; self.m.notify('He said "hi" \\ there', runner=lambda a: calls.append(a))
+        (argv,) = calls; self.assertEqual(argv[:2], ["osascript", "-e"])
+        self.assertIn('He said \\"hi\\" \\\\ there', argv[2]); self.assertEqual(len(argv), 3)
+
+
+@unittest.skipUnless(sys.platform == "darwin", "AppKit shell is macOS-only")
+class Native(Base):
+    def test_status_menu_mirrors_the_privacy_safe_items(self):
+        from desktop import menubar_mac
+        items = self.m.menu_items(self.m.snapshot(self.enable()))
+        menu = menubar_mac.build_menu(items, lambda action: None)
+        self.assertEqual([m.title() for m in menu.itemArray() if not m.isSeparatorItem()], [i["title"] for i in items if i])
+        self.assertEqual(menubar_mac.TITLE, "WorkReceipt")
+        self.assertTrue(menubar_mac.build_menu(items, lambda a: None))             # rebuilt on every refresh: must not re-register the ObjC class
+        got = []; m3 = menubar_mac.build_menu(items, got.append)
+        act = next(m for m in m3.itemArray() if m.representedObject() == "open"); act.target().fire_(act)
+        self.assertEqual(got, ["open"])
+
+
+class Ui(unittest.TestCase):
+    def test_settings_card_and_save_payload(self):
+        js = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", "app.js"), encoding="utf-8").read()
+        self.assertIn("Menu bar", js); self.assertIn("menubar:", js)
+
+
+if __name__ == "__main__":
+    unittest.main()

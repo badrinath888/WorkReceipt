@@ -416,7 +416,7 @@ function vPrivacy() {
 
 /* ---------- Settings ---------- */
 function vSettings() {
-  const s = S.data.settings;
+  const s = S.data.settings, mb = s.menubar || {};
   return `<div><div class="ph"><div><h2>Settings</h2><p>Local directories, appearance and report defaults.</p></div><div class="act"><button class="btn dark" id="savesettings">Save settings</button></div></div>
   ${DESKTOP && B.state === "failed" ? `<div class="callout err"><div><b>Native folder dialog unavailable.</b> ${BRIDGE_DOWN}</div></div>` : ""}
   <div class="grid g2s"><div class="card" style="grid-column:1/-1"><h3>Local directories</h3><div class="grid"><label class="field">Claude Code folder<span class="inrow"><input id="s_claude" class="path" title="${esc(s.claude_dir)}" value="${esc(s.claude_dir)}" spellcheck="false"><button type="button" class="btn sm" data-choose="s_claude">Choose…</button></span><small>${S.data.claude_dir_ok ? "projects folder found" : "no projects folder at this location"}</small></label>
@@ -424,6 +424,11 @@ function vSettings() {
   <div class="card" style="grid-column:1/-1"><h3>AI tools</h3><p class="small">Choose which tools' local session logs feed reports. Turn all off for Git-only reports. Nothing is read from a tool you leave off.</p><div class="grid">
     ${[["claude", "Claude Code", "supported", "claude_dir"], ["codex", "Codex CLI", "experimental", "codex_dir"], ["opencode", "OpenCode", "experimental", "opencode_dir"]].map(([k, n, st, dk]) => `<label class="field"><span><input type="checkbox" id="p_${k}" ${(s.providers || {})[k] ? "checked" : ""}> ${n} <small>(${st})</small></span>${k === "claude" ? "" : `<input id="s_${dk}" class="path" value="${esc(s[dk] || "")}" spellcheck="false">`}</label>`).join("")}
     <small>Cursor is not supported: it has no documented local transcript format. Git-only reports work for any repository.</small></div></div>
+  <div class="card" style="grid-column:1/-1"><h3>Menu bar</h3><p class="small">A macOS menu-bar widget for the projects you pick below. It shows counts only (new commits, sessions, findings to review) and never code, prompts, secrets or paths. Off by default.</p><div class="grid">
+    <label class="field"><span><input type="checkbox" id="mb_on" ${mb.enabled ? "checked" : ""}> Show WorkReceipt in the menu bar</span></label>
+    <label class="field"><span><input type="checkbox" id="mb_names" ${mb.names ? "checked" : ""}> Show project folder names (otherwise “Project 1”, “Project 2”)</span></label>
+    <label class="field"><span><input type="checkbox" id="mb_notify" ${mb.notify ? "checked" : ""}> Notify me about new commits (generic text only)</span></label>
+    ${(S.data.projects || []).map(p => `<label class="field"><span><input type="checkbox" data-mbproj="${esc(p.path)}" ${(mb.projects || []).includes(p.path) ? "checked" : ""}> ${esc(p.name)}</span></label>`).join("") || '<small>Add a project first.</small>'}</div></div>
   <div class="card"><h3>Appearance</h3><div class="seg" id="s_theme">${["system", "light", "dark"].map(t => `<button data-theme="${t}" class="${s.theme === t ? "on" : ""}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}</div></div>
   <div class="card"><h3>Report defaults</h3><div class="grid"><label class="field">Prepared by<input id="s_author" value="${esc(s.author)}" placeholder="Your name"></label><label class="field">Default client<input id="s_client" value="${esc(s.client)}" placeholder="Optional"></label></div></div></div>
   <div class="card sec"><h3>Always-redact terms</h3><label class="field"><span>One per line. Saved on this computer and applied to every report.</span><textarea id="s_terms" rows="4" style="border:1px solid var(--line-2);border-radius:10px;background:var(--surface);padding:9px 11px;font-size:13px;resize:vertical" spellcheck="false">${esc((s.redact_terms || []).join("\n"))}</textarea></label></div>
@@ -519,6 +524,8 @@ async function saveSettings(msg) {                  // persists every Settings f
   try {
     S.data.settings = await api("/api/settings", { claude_dir: $("#s_claude").value.trim(), out_dir: $("#s_out").value.trim(), author: $("#s_author").value.trim(), client: $("#s_client").value.trim(),
       theme: S.data.settings.theme, codex_dir: $("#s_codex_dir").value.trim(), opencode_dir: $("#s_opencode_dir").value.trim(),
+      menubar: { enabled: $("#mb_on").checked, names: $("#mb_names").checked, notify: $("#mb_notify").checked, seen: (S.data.settings.menubar || {}).seen || {},
+        projects: [...document.querySelectorAll("[data-mbproj]:checked")].map(x => x.dataset.mbproj) },
       providers: Object.fromEntries(["claude", "codex", "opencode"].map(k => [k, $("#p_" + k).checked])), redact_terms: $("#s_terms").value.split("\n") });
     await loadState(); if (!S.author) S.author = S.data.settings.author; if (!S.client) S.client = S.data.settings.client;
     const typed = ["s_author", "s_client", "s_terms"].map(id => [id, document.getElementById(id)]).filter(x => x[1]).map(x => [x[0], x[1].value]);   // text typed while the save was in flight

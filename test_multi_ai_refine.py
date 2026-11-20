@@ -125,10 +125,10 @@ class ClientSafeE2E(Base):
 
 
 class Version(unittest.TestCase):
-    def test_version_is_0_7_0_everywhere(self):
+    def test_version_is_consistent(self):
         root = os.path.dirname(os.path.abspath(__file__))
         py = re.search(r'^version\s*=\s*"([^"]+)"', open(os.path.join(root, "pyproject.toml")).read(), re.M).group(1)
-        self.assertEqual((core.VERSION, py), ("0.7.0", "0.7.0"))
+        self.assertEqual(core.VERSION, py)              # one version everywhere (bumped per milestone)
         self.assertIn("v0.7.0", open(os.path.join(root, "docs", "MULTI_AI.md")).read())
 
 

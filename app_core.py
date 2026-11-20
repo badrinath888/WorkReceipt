@@ -5,10 +5,11 @@ from collections import Counter
 from datetime import datetime, timedelta
 
 import client_safe as cs
+import menubar
 import providers
 import workreceipt as w
 
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 
 
 def build_info():
@@ -41,6 +42,7 @@ DEFAULTS = {"claude_dir": os.environ.get("WORKRECEIPT_CLAUDE_DIR", os.path.expan
             "out_dir": DEFAULT_OUT,
             "providers": {"claude": True, "codex": False, "opencode": False},       # AI tools to read; all off = Git-only reports
             "codex_dir": os.path.expanduser("~/.codex"), "opencode_dir": os.path.expanduser("~/.local/share/opencode"),
+            "menubar": {"enabled": False, "projects": [], "names": False, "notify": False, "seen": {}},       # v0.8.0 macOS menu-bar widget: opt-in
             "author": "", "client": "", "theme": "system", "redact_terms": [],
             "projects": [], "hidden": [], "onboarded": False, "demo": False, "settings_version": 2}
 
@@ -81,6 +83,7 @@ def save_settings(new):
     s["providers"] = {k: bool(pv.get(k)) for k in providers.LOADERS}
     for k in ("codex_dir", "opencode_dir"):
         s[k] = s[k] if isinstance(s[k], str) and s[k] else DEFAULTS[k]
+    s["menubar"] = menubar.clean(s["menubar"])
     s["onboarded"], s["demo"] = bool(s["onboarded"]), bool(s["demo"])
     os.makedirs(_home(), exist_ok=True)
     with open(os.path.join(_home(), "settings.json"), "w", encoding="utf-8") as f:
