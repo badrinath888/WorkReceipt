@@ -539,7 +539,8 @@ def render(ctx):
     if ctx["items"]:
         o.append("<p class='small noprint'>Titles below are editable in your browser before you print or save as PDF.</p>")
         for i, it in enumerate(ctx["items"], 1):
-            o.append(f"<div class=req><span class=no>{i}</span><span contenteditable>{e(it['title'])}</span>{f"<span class=src>{e(it['source'])}</span>" if it.get('source') else ''}<span class=dt>{e(it['date'])}</span></div>")
+            src = "<span class=src>" + e(it["source"]) + "</span>" if it.get("source") else ""
+            o.append(f"<div class=req><span class=no>{i}</span><span contenteditable>{e(it['title'])}</span>{src}<span class=dt>{e(it['date'])}</span></div>")
     else:
         o.append("<p>No session activity found in this period.</p>")
     o.append("<h2><span class=n>2</span>Changes delivered</h2>")
