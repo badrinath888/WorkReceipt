@@ -5,6 +5,7 @@ import argparse, json, mimetypes, os, secrets, sys, threading, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import app_core as core
+import menubar
 
 UI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
 TOKEN = secrets.token_urlsafe(24)
@@ -151,7 +152,9 @@ class H(BaseHTTPRequestHandler):
                 core.delete_report(data.get("name") or "")
                 return self._json(200, {"ok": True})
             if self.path == "/api/settings":
-                return self._json(200, core.save_settings(data))
+                saved = core.save_settings(data)
+                menubar.changed()                         # menu-bar widget reflects the new setting immediately
+                return self._json(200, saved)
         except core.NotFound:
             return self._json(404, {"error": "That detection no longer exists. The source may have changed or been removed; reload the project."})
         except core.UserError as ex:                  # messages written by this program only

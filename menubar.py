@@ -99,3 +99,55 @@ def notify(text, runner=None):
         (runner or (lambda a: subprocess.run(a, capture_output=True, timeout=5)))(argv)
     except Exception:
         pass
+
+
+ON_CHANGED = None          # set by the desktop shell: called after Settings are saved so the status item updates at once
+
+
+def changed():
+    """Called by the settings route after a SUCCESSFUL save. Never raises into the save path."""
+    try:
+        if ON_CHANGED:
+            ON_CHANGED()
+    except Exception:
+        pass
+
+
+class StatusController:
+    """Drives a status-bar item (duck-typed: setVisible_, setMenu_, button().setTitle_) with no AppKit dependency, so it is testable anywhere.
+    The item is hidden on creation and stays hidden until a refresh succeeds AND the widget is enabled."""
+
+    def __init__(self, item, build_menu, handle_action, call_after=None, snapshot=None, settings=None, wake=None):
+        self.item, self.build_menu, self.handle_action = item, build_menu, handle_action
+        self.call_after = call_after or (lambda f, *a: f(*a))
+        self.snapshot, self.settings, self.wake, self.prev = snapshot or globals()["snapshot"], settings or core.load_settings, wake, {}
+        self.call_after(item.setVisible_, False)
+
+    def _apply(self, snap):
+        self.item.setVisible_(snap["enabled"])
+        if snap["enabled"]:
+            self.item.setMenu_(self.build_menu(menu_items(snap), self.handle_action))
+            n = snap["new_commits"]
+            self.item.button().setTitle_(f"WR {n}" if n else "WR")
+
+    def refresh(self):
+        try:
+            s = self.settings()
+            snap = self.snapshot(s)
+        except Exception:
+            self.call_after(self.item.setVisible_, False)      # a failed scan never leaves a stray icon
+            return
+        self.call_after(self._apply, snap)
+        msg = notification(snap, self.prev, s)
+        if msg:
+            notify(msg)
+        self.prev = snap
+
+    def settings_changed(self):
+        """Cheap and immediate: visibility depends only on the saved setting. The slower counts refresh follows in the background."""
+        try:
+            self.call_after(self.item.setVisible_, clean(self.settings().get("menubar"))["enabled"])
+        except Exception:
+            self.call_after(self.item.setVisible_, False)
+        if self.wake:
+            self.wake()

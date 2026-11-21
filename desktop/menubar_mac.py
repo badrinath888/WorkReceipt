@@ -45,35 +45,19 @@ def build_menu(items, on_action):
 
 
 def install(handle_action):
-    """Create the status item and refresh it every minute. `handle_action(action)` is called on the main thread. Returns a stop() function."""
+    """Create the (initially hidden) status item and refresh it every minute and whenever Settings are saved. Returns a stop() function."""
     from AppKit import NSStatusBar
     from PyObjCTools import AppHelper
     item = NSStatusBar.systemStatusBar().statusItemWithLength_(-1)
+    item.setVisible_(False)                               # install() runs on the main thread: hidden before the first draw
+    stop, wake = threading.Event(), threading.Event()
+    ctl = menubar.StatusController(item, build_menu, handle_action, call_after=AppHelper.callAfter, wake=wake.set)
     item.button().setTitle_("WR")
-    stop, prev = threading.Event(), {}
-
-    def apply(snap, visible):
-        item.setVisible_(visible)
-        item.setMenu_(build_menu(menubar.menu_items(snap), handle_action))
-        n = snap["new_commits"]
-        item.button().setTitle_(f"WR {n}" if n else "WR")
-
-    def tick():
-        import app_core as core
-        s = core.load_settings()
-        snap = menubar.snapshot(s)
-        AppHelper.callAfter(apply, snap, snap["enabled"])
-        msg = menubar.notification(snap, prev, s)
-        if msg:
-            menubar.notify(msg)
-        prev.update(snap)
+    menubar.ON_CHANGED = ctl.settings_changed
 
     def loop():
         while not stop.is_set():
-            try:
-                tick()
-            except Exception:
-                pass
-            stop.wait(REFRESH_SECONDS)
+            ctl.refresh()
+            wake.wait(REFRESH_SECONDS); wake.clear()
     threading.Thread(target=loop, daemon=True).start()
     return stop.set
