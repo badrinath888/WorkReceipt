@@ -139,6 +139,22 @@ def _drop_handler(win):
         pass            # drag-and-drop is optional; Add project always works
 
 
+def make_menu_action(win):
+    """Menu callbacks run on the AppKit main thread; pywebview's show()/run_js() are thread-safe and run_js can wait on a result that is
+    delivered on that same thread, so the work is handed to a worker and the callback returns at once."""
+    import menubar
+
+    def work(action):
+        if action == "mark_seen":
+            menubar.mark_seen()
+            return
+        win.show()
+        cmd = menubar.ACTION_CMD.get(action)
+        if cmd:
+            win.run_js(f"window.wrCommand({cmd!r})")
+    return lambda action: threading.Thread(target=work, args=(action,), daemon=True).start()
+
+
 def start_menubar(win):
     """macOS menu-bar widget (opt-in via Settings; hidden until enabled). Quick actions reuse the page's own commands, so review/approval gates still apply."""
     if sys.platform != "darwin":
@@ -148,15 +164,7 @@ def start_menubar(win):
         from desktop import menubar_mac
         from PyObjCTools import AppHelper
 
-        def act(action):
-            if action == "mark_seen":
-                threading.Thread(target=menubar.mark_seen, daemon=True).start()
-                return
-            win.show()
-            cmd = menubar.ACTION_CMD.get(action)
-            if cmd:
-                win.run_js(f"window.wrCommand({cmd!r})")
-        AppHelper.callAfter(menubar_mac.install, act)
+        AppHelper.callAfter(menubar_mac.install, make_menu_action(win))
     except Exception:
         pass                       # the widget is optional; the app never depends on it
 

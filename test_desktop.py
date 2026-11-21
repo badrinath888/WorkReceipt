@@ -75,3 +75,17 @@ class Bridge(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MenuActionDispatchTests(unittest.TestCase):
+    def test_menu_action_returns_before_slow_run_js(self):
+        import threading
+        gate, started, done = threading.Event(), threading.Event(), threading.Event()
+        win = mock.Mock()
+        win.run_js.side_effect = lambda js: (started.set(), gate.wait(5), done.set())
+        act = dm.make_menu_action(win)
+        act("report")                                   # runs on the AppKit main thread: must not wait for run_js
+        self.assertTrue(started.wait(2)); self.assertFalse(done.is_set())
+        gate.set(); self.assertTrue(done.wait(2))
+        win.show.assert_called_once()
+        win.run_js.assert_called_once_with("window.wrCommand('go:studio')")
