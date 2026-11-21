@@ -117,18 +117,28 @@ class MenuAndNotify(Base):
         self.assertIn('He said \\"hi\\" \\\\ there', argv[2]); self.assertEqual(len(argv), 3)
 
 
+NATIVE_SCRIPT = """
+import sys, json; sys.path.insert(0, %r)
+import menubar
+from desktop import menubar_mac
+items = json.loads(sys.argv[1])
+m1 = menubar_mac.build_menu(items, lambda a: None)
+got = []; m2 = menubar_mac.build_menu(items, got.append)            # rebuilt on every refresh: must not re-register the ObjC class
+act = next(m for m in m2.itemArray() if m.representedObject() == "open"); act.target().fire_(act)
+print(json.dumps({"titles": [m.title() for m in m1.itemArray() if not m.isSeparatorItem()], "got": got, "t": menubar_mac.TITLE}))
+"""
+
+
 @unittest.skipUnless(sys.platform == "darwin", "AppKit shell is macOS-only")
 class Native(Base):
     def test_status_menu_mirrors_the_privacy_safe_items(self):
-        from desktop import menubar_mac
+        # Subprocess on purpose: importing AppKit here would change process-wide state that other suites (PDF setup tests) rely on.
         items = self.m.menu_items(self.m.snapshot(self.enable()))
-        menu = menubar_mac.build_menu(items, lambda action: None)
-        self.assertEqual([m.title() for m in menu.itemArray() if not m.isSeparatorItem()], [i["title"] for i in items if i])
-        self.assertEqual(menubar_mac.TITLE, "WorkReceipt")
-        self.assertTrue(menubar_mac.build_menu(items, lambda a: None))             # rebuilt on every refresh: must not re-register the ObjC class
-        got = []; m3 = menubar_mac.build_menu(items, got.append)
-        act = next(m for m in m3.itemArray() if m.representedObject() == "open"); act.target().fire_(act)
-        self.assertEqual(got, ["open"])
+        root = os.path.dirname(os.path.abspath(__file__))
+        r = subprocess.run([sys.executable, "-c", NATIVE_SCRIPT % root, json.dumps(items)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr[-400:])
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+        self.assertEqual(out["titles"], [i["title"] for i in items if i]); self.assertEqual((out["got"], out["t"]), (["open"], "WorkReceipt"))
 
 
 class Ui(unittest.TestCase):
