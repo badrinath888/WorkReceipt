@@ -85,6 +85,14 @@ def menu_items(snap):
                     {"title": "Mark commits as seen", "action": "mark_seen"}, {"title": "Refresh", "action": "refresh"}]
 
 
+def popover_model(snap):
+    """Data for the native popover card. Same privacy rules as menu_items: counts, generic labels and the last report date only."""
+    r = snap["review"]
+    return {"enabled": snap["enabled"], "projects": [dict(p) for p in snap["projects"]], "last_report": r["last_report"],
+            "stats": [{"label": "New commits", "value": snap["new_commits"]}, {"label": "AI sessions", "value": snap["sessions"]}, {"label": "To review", "value": r["pending"]}],
+            "actions": [{"id": "open", "title": "Open WorkReceipt"}, {"id": "report", "title": "Generate Report"}, {"id": "refresh", "title": "Refresh"}, {"id": "mark_seen", "title": "Mark commits as seen"}]}
+
+
 def notification(snap, prev, s):
     if not clean(s.get("menubar"))["notify"]:
         return None
@@ -117,16 +125,20 @@ class StatusController:
     """Drives a status-bar item (duck-typed: setVisible_, setMenu_, button().setTitle_) with no AppKit dependency, so it is testable anywhere.
     The item is hidden on creation and stays hidden until a refresh succeeds AND the widget is enabled."""
 
-    def __init__(self, item, build_menu, handle_action, call_after=None, snapshot=None, settings=None, wake=None):
+    def __init__(self, item, build_menu, handle_action, call_after=None, snapshot=None, settings=None, wake=None, on_model=None):
         self.item, self.build_menu, self.handle_action = item, build_menu, handle_action
         self.call_after = call_after or (lambda f, *a: f(*a))
+        self.on_model = on_model                      # popover mode: push the model to the native card instead of installing an NSMenu
         self.snapshot, self.settings, self.wake, self.prev = snapshot or globals()["snapshot"], settings or core.load_settings, wake, {}
         self.call_after(item.setVisible_, False)
 
     def _apply(self, snap):
         self.item.setVisible_(snap["enabled"])
-        if snap["enabled"]:
+        if self.on_model:
+            self.on_model(popover_model(snap))
+        elif snap["enabled"]:
             self.item.setMenu_(self.build_menu(menu_items(snap), self.handle_action))
+        if snap["enabled"]:
             n = snap["new_commits"]
             self.item.button().setTitle_(f"WR {n}" if n else "WR")
 

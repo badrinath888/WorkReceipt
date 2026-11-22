@@ -213,6 +213,35 @@ print(json.dumps({"titles": [m.title() for m in m1.itemArray() if not m.isSepara
 """
 
 
+class Popover(Base):
+    """Premium popover (v0.8.1): the model behind the native card. Same privacy rules as the menu: counts and generic labels only."""
+    def test_model_has_totals_projects_review_and_actions(self):
+        s = self.enable(); core.save_settings({"menubar": {"enabled": True, "projects": [self.repo], "seen": {self.repo: self.head1}}}); self.commit()
+        m = self.m.popover_model(self.m.snapshot(core.load_settings()))
+        self.assertEqual([(x["label"], x["value"]) for x in m["stats"]][:3], [("New commits", 1), ("AI sessions", 1), ("To review", 0)])
+        self.assertEqual(m["projects"], [{"label": "Project 1", "new_commits": 1, "sessions": 1}])
+        self.assertEqual([a["id"] for a in m["actions"]], ["open", "report", "refresh", "mark_seen"])
+        self.assertTrue(m["enabled"])
+
+    def test_model_leaks_nothing_identifying(self):
+        s = self.enable(); self.commit(MSG)
+        blob = json.dumps(self.m.popover_model(self.m.snapshot(s)))
+        for bad in (NAME, MSG, PROMPT, AKIA, self.repo, "zq-"):
+            self.assertNotIn(bad, blob)
+
+    def test_disabled_model_is_empty_and_marked_off(self):
+        m = self.m.popover_model(self.m.snapshot(core.save_settings({"menubar": {"enabled": False}})))
+        self.assertEqual((m["enabled"], m["projects"]), (False, []))
+
+
+class PopoverController(Lifecycle):
+    def test_popover_mode_pushes_model_and_installs_no_menu(self):
+        got = []; core.save_settings({"menubar": {"enabled": True, "projects": [self.repo]}})
+        c = self.ctl(on_model=got.append); c.refresh()
+        self.assertEqual((self.item.vis[-1], self.item.menu, len(got)), (True, None, 1))
+        self.assertIn("stats", got[0])
+
+
 @unittest.skipUnless(sys.platform == "darwin", "AppKit shell is macOS-only")
 class Native(Base):
     def test_status_menu_mirrors_the_privacy_safe_items(self):
@@ -225,7 +254,50 @@ class Native(Base):
         self.assertEqual(out["titles"], [i["title"] for i in items if i]); self.assertEqual((out["got"], out["t"]), (["open"], "WorkReceipt"))
 
 
+POPOVER_SCRIPT = r"""
+import sys, json, time
+sys.path.insert(0, %r)
+from AppKit import NSApplication, NSStatusBar, NSApplicationActivationPolicyAccessory
+from Foundation import NSDate, NSRunLoop
+from desktop import menubar_mac
+app = NSApplication.sharedApplication(); app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
+model = json.loads(sys.argv[1]); got = []
+item = NSStatusBar.systemStatusBar().statusItemWithLength_(-1)
+item.button().setTitle_("WR"); pop = menubar_mac.Popover(item, got.append); pop.update(model)
+def spin(t=0.4): NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(t))
+spin(0.5); item.button().performClick_(None); spin()
+shown = pop.is_shown()
+labels = pop.texts()
+pop.click("refresh"); pop.click("mark_seen"); spin(); still = pop.is_shown()
+pop.toggle(); spin(1.2)          # performClick_ on an already-highlighted status button does not re-fire in AppKit; toggle() is the same action
+print(json.dumps({"shown": shown, "labels": labels, "got": got, "closed": not pop.is_shown(), "still": still}))
+NSStatusBar.systemStatusBar().removeStatusItem_(item)
+"""
+
+
+class NativePopover(Base):
+    def test_real_click_opens_popover_with_counts_and_actions_fire(self):
+        m = self.m.popover_model(self.m.snapshot(self.enable()))
+        root = os.path.dirname(os.path.abspath(__file__))
+        r = subprocess.run([sys.executable, "-c", POPOVER_SCRIPT % root, json.dumps(m)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr[-600:])
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+        self.assertTrue(out["shown"], out); self.assertTrue(out["closed"], out)
+        self.assertEqual(out["got"], ["refresh", "mark_seen"])
+        for want in ("New commits", "AI sessions", "To review", "Project 1", "Open WorkReceipt", "Generate Report"):
+            self.assertTrue(any(want in t for t in out["labels"]), want)
+        for bad in (NAME, MSG, self.repo): self.assertFalse(any(bad in t for t in out["labels"]))
+NativePopover = unittest.skipUnless(sys.platform == "darwin", "AppKit shell is macOS-only")(NativePopover)
+
+
 class Ui(unittest.TestCase):
+    def test_ai_tools_rows_are_switches_with_conditional_folder_and_unsupported_cursor(self):
+        js = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", "app.js"), encoding="utf-8").read().split("function vSettings")[1].split("Menu bar</h3>")[0]
+        self.assertIn('role="switch"', js); self.assertIn('class="prow', js)
+        self.assertIn('id="p_${k}"', js); self.assertIn('id="s_${dk}"', js)        # ids unchanged: save payload and persistence untouched
+        self.assertIn('${on ?', js)                                                  # folder input rendered only when enabled
+        self.assertIn("Cursor", js); self.assertIn("Not supported", js); self.assertNotIn('id="p_cursor"', js)
+
     def test_settings_card_and_save_payload(self):
         js = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", "app.js"), encoding="utf-8").read()
         self.assertIn("Menu bar", js); self.assertIn("menubar:", js)

@@ -292,3 +292,14 @@ div.issues{padding-left:12px}
 .manifest div{display:grid;grid-template-columns:130px 1fr;gap:10px}
 .manifest dt{color:var(--muted)}.manifest dd{margin:0;font-weight:500;overflow-wrap:anywhere}
 .ritem button:disabled,.btn:disabled{cursor:not-allowed}
+
+/* AI tools rows: compact native-style switch list */
+.prow{border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--surface)}.prow.off{opacity:.6}
+.phead{display:flex;align-items:center;gap:10px}.pico{width:28px;height:28px;border-radius:7px;background:var(--sunken);display:grid;place-items:center;font-size:10.5px;font-weight:700;color:var(--ink-2);flex:none}
+.prow.on .pico{background:var(--teal-soft);color:var(--teal)}.pname{display:flex;flex-direction:column;flex:1;min-width:0;font-size:13px;color:var(--ink)}.pname small{font-size:11px;color:var(--faint)}
+.pstate{font-size:11.5px;color:var(--faint)}.prow.on .pstate{color:var(--teal)}.pdir{margin-top:8px}.pdir[hidden]{display:none}
+.sw{position:relative;width:36px;height:20px;flex:none;cursor:pointer}.sw input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+.sw .knob{position:absolute;inset:0;border-radius:10px;background:var(--line-2);transition:background .2s;pointer-events:none}
+.sw .knob::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .2s}
+.sw input:checked+.knob{background:var(--teal)}.sw input:checked+.knob::after{transform:translateX(16px)}
+.sw input:focus-visible+.knob{outline:2px solid var(--teal-hi);outline-offset:2px}.sw input:disabled{cursor:not-allowed}
