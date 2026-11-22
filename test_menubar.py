@@ -290,6 +290,50 @@ class NativePopover(Base):
 NativePopover = unittest.skipUnless(sys.platform == "darwin", "AppKit shell is macOS-only")(NativePopover)
 
 
+KEY_SCRIPT = r"""
+import sys, json
+sys.path.insert(0, %r)
+from AppKit import NSApplication, NSStatusBar, NSApplicationActivationPolicyAccessory, NSEvent, NSEventTypeKeyDown
+from Foundation import NSDate, NSRunLoop
+from desktop import menubar_mac
+app = NSApplication.sharedApplication(); app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
+model = json.loads(sys.argv[1]); got = []
+item = NSStatusBar.systemStatusBar().statusItemWithLength_(-1); item.button().setTitle_("WR")
+pop = menubar_mac.Popover(item, got.append); pop.update(model)
+def spin(t=0.4): NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(t))
+spin(0.5); pop.toggle(); spin(0.6)
+w = pop.pop.contentViewController().view().window()
+def key(ch, code):
+    return NSEvent.keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode_(NSEventTypeKeyDown, (0, 0), 0, 0, w.windowNumber(), None, ch, ch, False, code)
+ret = pop.buttons["open"].performKeyEquivalent_(key("\r", 36))
+btns = list(pop.buttons.values())
+focusable = [b.canBecomeKeyView() and b.acceptsFirstResponder() for b in btns]
+w.makeFirstResponder_(btns[0]); first = w.firstResponder() is btns[0]
+pop.click("report"); spin(1.2)                      # actions that leave the app close the popover
+closed_by_action = not pop.is_shown()
+pop.toggle(); spin(0.6); reopened = pop.is_shown()
+pop.toggle(); spin(1.2); second_toggle_closed = not pop.is_shown()
+print(json.dumps({"transient": int(pop.pop.behavior()), "ret": bool(ret), "got": got, "focusable": focusable, "first": first, "key": bool(w.canBecomeKeyWindow()),
+                  "closed_by_action": closed_by_action, "reopened": reopened, "second_toggle_closed": second_toggle_closed}))
+NSStatusBar.systemStatusBar().removeStatusItem_(item)
+"""
+
+
+class Keyboard(Base):
+    def test_return_tab_focus_and_dismissal(self):
+        m = self.m.popover_model(self.m.snapshot(self.enable()))
+        root = os.path.dirname(os.path.abspath(__file__))
+        r = subprocess.run([sys.executable, "-c", KEY_SCRIPT % root, json.dumps(m)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr[-600:])
+        o = json.loads(r.stdout.strip().splitlines()[-1])
+        self.assertEqual(o["transient"], 1, o)                  # transient: Escape and click-away dismiss it natively
+        self.assertTrue(o["ret"], o); self.assertEqual(o["got"][:1], ["open"], o)     # Return activates the default (Open) button
+        self.assertTrue(all(o["focusable"]) and o["first"], o)   # every button is reachable by Tab / full keyboard access
+        self.assertTrue(o["key"], o)                              # popover window can take keyboard focus (actual key status needs an active app: manual check)
+        self.assertTrue(o["closed_by_action"] and o["reopened"] and o["second_toggle_closed"], o)
+Keyboard = unittest.skipUnless(sys.platform == "darwin", "AppKit shell is macOS-only")(Keyboard)
+
+
 class Ui(unittest.TestCase):
     def test_ai_tools_rows_are_switches_with_conditional_folder_and_unsupported_cursor(self):
         js = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", "app.js"), encoding="utf-8").read().split("function vSettings")[1].split("Menu bar</h3>")[0]

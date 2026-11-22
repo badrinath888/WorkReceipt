@@ -128,6 +128,11 @@ class Popover:
             from AppKit import NSApp
             NSApp.activateIgnoringOtherApps_(True)
             self.pop.showRelativeToRect_ofView_preferredEdge_(self.item.button().bounds(), self.item.button(), 1)   # 1 = minY: opens below the menu bar
+            w = self.pop.contentViewController().view().window()
+            if w is not None:                                                  # keyboard: Tab/Return/Esc only reach a key window
+                w.makeKeyWindow()
+                if "open" in self.buttons:
+                    w.setDefaultButtonCell_(self.buttons["open"].cell())
 
     def is_shown(self):
         return bool(self.pop.isShown())
