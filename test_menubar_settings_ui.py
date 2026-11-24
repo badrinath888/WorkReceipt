@@ -97,6 +97,12 @@ class Browser(unittest.TestCase):
         for w, n in ((1180, "desktop"), (360, "narrow")):
             pg = self.open(w); pg.locator("#mb_on").scroll_into_view_if_needed()
             pg.locator("h3:has-text('Menu bar')").locator("xpath=ancestor::div[contains(@class,'card')][1]").screenshot(path=os.path.join(out, f"settings-menubar-{n}.png")); pg.close()
+        for x in list(core.load_settings().get("projects", [])): core.remove_project(x)
+        a, b = mkrepo(self.root, "client-site"), mkrepo(self.root, "api-service")   # synthetic repos: two listed, only one selected
+        core.add_project(a); core.add_project(b); core.save_settings({"menubar": {"enabled": True, "projects": [a]}})
+        for w, n in ((1180, "desktop"), (360, "narrow")):
+            pg = self.open(w); pg.locator("#mb_on").scroll_into_view_if_needed()
+            pg.locator("h3:has-text('Menu bar')").locator("xpath=ancestor::div[contains(@class,'card')][1]").screenshot(path=os.path.join(out, f"settings-menubar-projects-{n}.png")); pg.close()
 
 
 if __name__ == "__main__":

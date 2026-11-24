@@ -1,7 +1,7 @@
 """Application-wide interaction audit: real clicks/keys in headless Chrome against the real HTTP server on SYNTHETIC data.
 Every control is recorded in docs/interaction_matrix.json with level (browser = real interaction in Chrome) and PASS/FAIL/BLOCKED.
 BLOCKED = needs the real macOS app (WKWebView, Cocoa dialogs, Finder, menu bar); a FakeNative host does not prove those."""
-import json, os, shutil, sys, unittest
+import json, os, shutil, sys, time, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test_e2e_desktop as _e
 E2E, FakeNative = _e.E2E, _e.FakeNative
@@ -183,13 +183,19 @@ class Audit(unittest.TestCase):
         pg.close()
 
     # ---------------- settings / shell ----------------
+    def settle(self, k, v):   # Choose… sets the field first and saves async: wait for the save, and for its re-render, before the next step
+        for _ in range(50):
+            if self.saved().get(k) == v: break
+            time.sleep(0.1)
+        self.assertEqual(self.saved()[k], v); time.sleep(0.5)
+
     def test_settings_and_shell(self):
         S = "Settings"; self.core.save_settings({"onboarded": True}); pin = os.environ.get("WORKRECEIPT_CLAUDE_DIR")
         if pin: self.core.save_settings({"claude_dir": pin}); os.environ.pop("WORKRECEIPT_CLAUDE_DIR"); self.addCleanup(os.environ.__setitem__, "WORKRECEIPT_CLAUDE_DIR", pin)
         a, b = os.path.join(self.root, "au-claude"), os.path.join(self.root, "au-out"); os.makedirs(a); os.makedirs(b)
         self.native(picks=[a, b]); pg = self.page(); pg.goto(self.url + "?shell=desktop#settings"); pg.wait_for_selector("[data-choose=s_claude]:not([disabled])")
-        self.chk(S, "Claude folder Choose…", "field filled and saved", "data-choose", "/api/native/pick_folder", lambda: (pg.click("[data-choose=s_claude]"), pg.wait_for_function("p=>document.querySelector('#s_claude').value===p", arg=a), self.assertEqual(self.saved()["claude_dir"], a)))
-        self.chk(S, "Reports folder Choose…", "field filled and saved", "data-choose", "/api/native/pick_folder", lambda: (pg.click("[data-choose=s_out]"), pg.wait_for_function("p=>document.querySelector('#s_out').value===p", arg=b), self.assertEqual(self.saved()["out_dir"], b)))
+        self.chk(S, "Claude folder Choose…", "field filled and saved", "data-choose", "/api/native/pick_folder", lambda: (pg.click("[data-choose=s_claude]"), pg.wait_for_function("p=>document.querySelector('#s_claude').value===p", arg=a), self.settle("claude_dir", a)))
+        self.chk(S, "Reports folder Choose…", "field filled and saved", "data-choose", "/api/native/pick_folder", lambda: (pg.click("[data-choose=s_out]"), pg.wait_for_function("p=>document.querySelector('#s_out').value===p", arg=b), self.settle("out_dir", b)))
         def fields():
             pg.fill("#s_author", "Audit Author"); pg.fill("#s_client", "Audit Client"); pg.fill("#s_terms", "alpha\nbeta"); pg.click("#savesettings"); pg.wait_for_selector("#toast.on:has-text('Settings saved')")
             s = self.saved(); self.assertEqual((s["author"], s["client"], s["redact_terms"]), ("Audit Author", "Audit Client", ["alpha", "beta"]))
