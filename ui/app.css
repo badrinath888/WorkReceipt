@@ -303,3 +303,10 @@ div.issues{padding-left:12px}
 .sw .knob::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .2s}
 .sw input:checked+.knob{background:var(--teal)}.sw input:checked+.knob::after{transform:translateX(16px)}
 .sw input:focus-visible+.knob{outline:2px solid var(--teal-hi);outline-offset:2px}.sw input:disabled{cursor:not-allowed}
+
+/* Menu bar settings: one horizontal row per setting, switch on the right */
+.mbrows{display:block}.srow{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 2px;border-top:1px solid var(--line);min-width:0}.mbrows .srow:first-child{border-top:0}
+.srow .stext{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;font-size:13px;color:var(--ink)}.srow .stext b{font-weight:500}.srow .stext small{font-size:11.5px;color:var(--faint);line-height:1.35}
+.mbh{margin:16px 0 2px;font-size:13px;font-weight:600}.mbproj{margin-top:6px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--surface)}.mbproj .srow:first-child{border-top:0}
+.srow.sel{cursor:pointer}.srow.sel .stext b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.srow.sel input{width:16px;height:16px;margin:0;accent-color:var(--teal);flex:none}
+.mbempty{margin-top:8px}
