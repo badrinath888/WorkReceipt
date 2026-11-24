@@ -415,15 +415,24 @@ function vPrivacy() {
 }
 
 /* ---------- Settings ---------- */
+const mbRow = (id, title, desc, on) => `<div class="srow"><span class="stext"><b id="${id}_l">${title}</b><small id="${id}_d">${desc}</small></span><label class="sw"><input type="checkbox" role="switch" id="${id}" aria-labelledby="${id}_l" aria-describedby="${id}_d" ${on ? "checked" : ""}><span class="knob"></span></label></div>`;
 function vSettings() {
-  const s = S.data.settings;
+  const s = S.data.settings, mb = s.menubar || {};
   return `<div><div class="ph"><div><h2>Settings</h2><p>Local directories, appearance and report defaults.</p></div><div class="act"><button class="btn dark" id="savesettings">Save settings</button></div></div>
   ${DESKTOP && B.state === "failed" ? `<div class="callout err"><div><b>Native folder dialog unavailable.</b> ${BRIDGE_DOWN}</div></div>` : ""}
   <div class="grid g2s"><div class="card" style="grid-column:1/-1"><h3>Local directories</h3><div class="grid"><label class="field">Claude Code folder<span class="inrow"><input id="s_claude" class="path" title="${esc(s.claude_dir)}" value="${esc(s.claude_dir)}" spellcheck="false"><button type="button" class="btn sm" data-choose="s_claude">Choose…</button></span><small>${S.data.claude_dir_ok ? "projects folder found" : "no projects folder at this location"}</small></label>
     <label class="field">Default reports folder<span class="inrow"><input id="s_out" class="path" title="${esc(s.out_dir)}" value="${esc(s.out_dir)}" spellcheck="false"><button type="button" class="btn sm" data-choose="s_out">Choose…</button></span><small>Created on first export</small></label></div></div>
   <div class="card" style="grid-column:1/-1"><h3>AI tools</h3><p class="small">Choose which tools' local session logs feed reports. Turn all off for Git-only reports. Nothing is read from a tool you leave off.</p><div class="grid">
-    ${[["claude", "Claude Code", "supported", "claude_dir"], ["codex", "Codex CLI", "experimental", "codex_dir"], ["opencode", "OpenCode", "experimental", "opencode_dir"]].map(([k, n, st, dk]) => `<label class="field"><span><input type="checkbox" id="p_${k}" ${(s.providers || {})[k] ? "checked" : ""}> ${n} <small>(${st})</small></span>${k === "claude" ? "" : `<input id="s_${dk}" class="path" value="${esc(s[dk] || "")}" spellcheck="false">`}</label>`).join("")}
-    <small>Cursor is not supported: it has no documented local transcript format. Git-only reports work for any repository.</small></div></div>
+    ${[["claude", "Claude Code", "Supported", "claude_dir", "CC"], ["codex", "Codex CLI", "Experimental", "codex_dir", "CX"], ["opencode", "OpenCode", "Experimental", "opencode_dir", "OC"]].map(([k, n, st, dk, ic]) => { const on = !!(s.providers || {})[k]; return `<div class="prow ${on ? "on" : ""}"><div class="phead"><span class="pico" aria-hidden="true">${ic}</span><span class="pname"><b>${n}</b><small>${st}${k === "claude" ? "" : " · off by default"}</small></span><span class="pstate">${on ? "On" : "Off"}</span><label class="sw"><input type="checkbox" role="switch" id="p_${k}" aria-label="${n}" ${on ? "checked" : ""}><span class="knob"></span></label></div>${k === "claude" ? "" : `<input id="s_${dk}" class="path pdir" aria-label="${n} session folder" value="${esc(s[dk] || "")}" spellcheck="false" ${on ? "" : "hidden"}>`}</div>`; }).join("")}
+    <div class="prow off"><div class="phead"><span class="pico" aria-hidden="true">CU</span><span class="pname"><b>Cursor</b><small>Not supported · no documented local transcript format</small></span><span class="pstate">Unavailable</span><label class="sw"><input type="checkbox" role="switch" disabled aria-label="Cursor (not supported)"><span class="knob"></span></label></div></div>
+    <small>Git-only reports work for any repository. Nothing is read from a tool you leave off.</small></div></div>
+  <div class="card" style="grid-column:1/-1"><h3>Menu bar</h3><p class="small">A macOS menu-bar widget for the projects you pick below. It shows counts only (new commits, sessions, findings to review) and never code, prompts, secrets or paths. Off by default.</p><div class="mbrows">
+    ${mbRow("mb_on", "Show in menu bar", "Adds the WorkReceipt widget to the macOS menu bar.", mb.enabled)}
+    ${mbRow("mb_names", "Show project names", "Off: projects appear as “Project 1”, “Project 2”.", mb.names)}
+    ${mbRow("mb_notify", "Notify about new commits", "Generic text only, never commit messages.", mb.notify)}</div>
+    <h4 class="mbh" id="mbproj_h">Projects to monitor</h4><p class="small">Only the projects you select are read. Nothing is selected automatically.</p>
+    ${(S.data.projects || []).length ? `<div class="mbproj" role="group" aria-labelledby="mbproj_h">${S.data.projects.map(p => `<label class="srow sel"><span class="stext"><b>${esc(p.name)}</b></span><input type="checkbox" data-mbproj="${esc(p.path)}" ${(mb.projects || []).includes(p.path) ? "checked" : ""}></label>`).join("")}</div>`
+      : `<div class="empty mbempty"><b>No projects added yet.</b><button type="button" class="btn dark" data-go="projects">${ic("plus")} Add project</button></div>`}</div>
   <div class="card"><h3>Appearance</h3><div class="seg" id="s_theme">${["system", "light", "dark"].map(t => `<button data-theme="${t}" class="${s.theme === t ? "on" : ""}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}</div></div>
   <div class="card"><h3>Report defaults</h3><div class="grid"><label class="field">Prepared by<input id="s_author" value="${esc(s.author)}" placeholder="Your name"></label><label class="field">Default client<input id="s_client" value="${esc(s.client)}" placeholder="Optional"></label></div></div></div>
   <div class="card sec"><h3>Always-redact terms</h3><label class="field"><span>One per line. Saved on this computer and applied to every report.</span><textarea id="s_terms" rows="4" style="border:1px solid var(--line-2);border-radius:10px;background:var(--surface);padding:9px 11px;font-size:13px;resize:vertical" spellcheck="false">${esc((s.redact_terms || []).join("\n"))}</textarea></label></div>
@@ -519,6 +528,8 @@ async function saveSettings(msg) {                  // persists every Settings f
   try {
     S.data.settings = await api("/api/settings", { claude_dir: $("#s_claude").value.trim(), out_dir: $("#s_out").value.trim(), author: $("#s_author").value.trim(), client: $("#s_client").value.trim(),
       theme: S.data.settings.theme, codex_dir: $("#s_codex_dir").value.trim(), opencode_dir: $("#s_opencode_dir").value.trim(),
+      menubar: { enabled: $("#mb_on").checked, names: $("#mb_names").checked, notify: $("#mb_notify").checked, seen: (S.data.settings.menubar || {}).seen || {},
+        projects: [...document.querySelectorAll("[data-mbproj]:checked")].map(x => x.dataset.mbproj) },
       providers: Object.fromEntries(["claude", "codex", "opencode"].map(k => [k, $("#p_" + k).checked])), redact_terms: $("#s_terms").value.split("\n") });
     await loadState(); if (!S.author) S.author = S.data.settings.author; if (!S.client) S.client = S.data.settings.client;
     const typed = ["s_author", "s_client", "s_terms"].map(id => [id, document.getElementById(id)]).filter(x => x[1]).map(x => [x[0], x[1].value]);   // text typed while the save was in flight
@@ -598,6 +609,7 @@ document.addEventListener("click", async e => {
 });
 document.addEventListener("change", e => {
   const d = e.target.dataset || {};
+  if (/^p_/.test(e.target.id || "") && e.target.closest(".prow")) { const r = e.target.closest(".prow"), on = e.target.checked; r.classList.toggle("on", on); r.querySelector(".pstate").textContent = on ? "On" : "Off"; const f = r.querySelector(".pdir"); if (f) f.hidden = !on; }
   if (d.istatus) { const i = crItem(d.istatus); if (i && !i.approved) { i.status = e.target.value; if (i.status !== "delivered") { i.commits = []; i.attested = false; } renderKeep(); } }
   else if (d.iatt) { const i = crItem(d.iatt); if (i && !i.approved) { i.attested = e.target.checked; renderKeep(); } }
   else if (d.icommit) { const i = crItem(d.icommit); if (i && !i.approved) { const h = e.target.value; i.commits = e.target.checked ? [...new Set([...i.commits, h])] : i.commits.filter(x => x !== h); renderKeep(); } }

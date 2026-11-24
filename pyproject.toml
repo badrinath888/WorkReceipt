@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "workreceipt"
-version = "0.7.0"
+version = "0.8.0"
 description = "Client-safe work report from Claude Code sessions + git. Local only."
 readme = "README.md"
 requires-python = ">=3.9"
